@@ -11,7 +11,7 @@
 #define BLOCK_SIZE 6
 
 // Switches on P2.0 = left, P2.1 = rotate
-#define SWITCHES (BIT0 | BIT1)
+#define SWITCHES  (BIT0 | BIT1 | BIT3)
 
 // Game grid: 0 = empty, 1 = filled
 uint8_t grid[GRID_ROWS][GRID_COLS];
