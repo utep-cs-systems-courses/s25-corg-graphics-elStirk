@@ -55,14 +55,15 @@ void clearBlock(int x, int y) {
   fillRectangle(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE, COLOR_BLACK);
 }
 
+// Llama a esto en cuanto detectes spawn colisionando (fila 0)
 void resetGame() {
-  // Limpia la matriz
+  // 1) limpia la matriz de estado
   for (int r = 0; r < GRID_ROWS; r++)
     for (int c = 0; c < GRID_COLS; c++)
       grid[r][c] = 0;
-
-  // Limpia pantalla y reinicia contador
+  // 2) limpia toda la pantalla
   clearScreen(COLOR_BLACK);
+  // 3) reinicia el contador
   tickCount = 0;
 }
 // Draw/clear current tetromino at (x,y)
