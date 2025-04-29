@@ -7,7 +7,7 @@
 #include <stdint.h>
 // Grid dimensions (LCD 96x64, using 6x6 pixel blocks)
 #define GRID_COLS 16  // 32 / 6 = 16 columns
-#define GRID_ROWS 30  // 20 / 6 = 10 rows
+#define GRID_ROWS 22  // 20 / 6 = 10 rows
 #define BLOCK_SIZE 6
 
 // Switches on P2.0 = left, P2.1 = rotate
