@@ -57,13 +57,11 @@ void clearBlock(int x, int y) {
 
 // Llama a esto en cuanto detectes spawn colisionando (fila 0)
 void resetGame() {
-  // 1) limpia la matriz de estado
   for (int r = 0; r < GRID_ROWS; r++)
     for (int c = 0; c < GRID_COLS; c++)
       grid[r][c] = 0;
-  // 2) limpia toda la pantalla
+
   clearScreen(COLOR_BLACK);
-  // 3) reinicia el contador
   tickCount = 0;
 }
 // Draw/clear current tetromino at (x,y)
@@ -115,18 +113,30 @@ void fixPiece() {
   }
 }
 
-// Spawn a new piece
+// // Spawn a new piece
+// void newPiece() {
+//   currentPiece = (tickCount / 20) % 2;  // alternate between pieces
+//   rotation = 0;
+//   posX = GRID_COLS / 2;
+//   posY = 0;
+//   if (checkCollision(currentPiece, rotation, posX, posY)) {
+//     // Game over: clear grid
+//     for (int r = 0; r < GRID_ROWS; r++)
+//       for (int c = 0; c < GRID_COLS; c++)
+// 	grid[r][c] = 0;
+//   }
+// }
+// Sólo posiciona la pieza al nacer. NO limpiamos aquí la matriz.
 void newPiece() {
-  currentPiece = (tickCount / 20) % 2;  // alternate between pieces
-  rotation = 0;
-  posX = GRID_COLS / 2;
-  posY = 0;
-  if (checkCollision(currentPiece, rotation, posX, posY)) {
-    // Game over: clear grid
-    for (int r = 0; r < GRID_ROWS; r++)
-      for (int c = 0; c < GRID_COLS; c++)
-	grid[r][c] = 0;
-  }
+  currentPiece = (tickCount / 20) % 2;
+  rotation     = 0;
+  posX         = GRID_COLS / 2;
+  posY         = 0;
+
+  // ¡Elimina este bloque!  
+  // if (checkCollision(currentPiece, rotation, posX, posY)) {
+  //   // YA lo hará resetGame() en el handler, así que aquí no limpiamos.
+  // }
 }
 
 // WDT interrupt: drop and redraw
@@ -151,17 +161,16 @@ void wdt_c_handler() {
   if (tickCount % 20 == 0) {
     clearPiece(currentPiece, rotation, posX, posY);
 
-    // ¿Podemos bajar?
     if (!checkCollision(currentPiece, rotation, posX, posY + 1)) {
       posY++;
     } else {
-      // Si la pieza “choca” estando en la fila 0 → game over
+      // Sólo aquí consideramos game-over si la pieza ni siquiera pudo bajar.
       if (posY <= 0) {
-        resetGame();
+        resetGame();    // borra todo UNA vez
       } else {
-        fixPiece();     // Fija la pieza en el grid y la pinta
+        fixPiece();     // fija y pinta la pieza en el tablero
       }
-      newPiece();       // Genera la siguiente pieza en la posición inicial
+      newPiece();       // genera la siguiente pieza limpia
     }
 
     drawPiece(currentPiece, rotation, posX, posY);
