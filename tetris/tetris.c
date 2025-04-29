@@ -221,10 +221,7 @@ void switch_interrupt_handler() {
     drawPiece(currentPiece, rotation, posX, posY);
   }
   if (!(p2val & BIT3)) {            // Right button (4th)
-    clearPiece(currentPiece, rotation, posX, posY);
-    if (!checkCollision(currentPiece, rotation, posX + 1, posY))
-      posX++;
-    drawPiece(currentPiece, rotation, posX, posY);
+    clearScreen(COLOR_BLACK);
   }
 
   P2IFG &= ~SWITCHES;               // clear all flags
