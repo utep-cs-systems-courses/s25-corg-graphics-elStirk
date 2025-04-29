@@ -180,20 +180,45 @@ void switch_init() {
   P2DIR &= ~SWITCHES;
   P2IE  |= SWITCHES;
 }
+// void switch_interrupt_handler() {
+//   char p2val = switch_update_interrupt_sense();
+//   if (!(p2val & BIT0)) {  // Left button
+//     clearPiece(currentPiece, rotation, posX, posY);
+//     if (!checkCollision(currentPiece, rotation, posX - 1, posY)) posX--;
+//     drawPiece(currentPiece, rotation, posX, posY);
+//   }
+//   if (!(p2val & BIT1)) {  // Rotate button
+//     clearPiece(currentPiece, rotation, posX, posY);
+//     int nr = (rotation + 1) & 3;
+//     if (!checkCollision(currentPiece, nr, posX, posY)) rotation = nr;
+//     drawPiece(currentPiece, rotation, posX, posY);
+//   }
+//   P2IFG &= ~SWITCHES;
+// }
 void switch_interrupt_handler() {
   char p2val = switch_update_interrupt_sense();
-  if (!(p2val & BIT0)) {  // Left button
+
+  if (!(p2val & BIT0)) {            // Left button
     clearPiece(currentPiece, rotation, posX, posY);
-    if (!checkCollision(currentPiece, rotation, posX - 1, posY)) posX--;
+    if (!checkCollision(currentPiece, rotation, posX - 1, posY))
+      posX--;
     drawPiece(currentPiece, rotation, posX, posY);
   }
-  if (!(p2val & BIT1)) {  // Rotate button
+  if (!(p2val & BIT1)) {            // Rotate button
     clearPiece(currentPiece, rotation, posX, posY);
     int nr = (rotation + 1) & 3;
-    if (!checkCollision(currentPiece, nr, posX, posY)) rotation = nr;
+    if (!checkCollision(currentPiece, nr, posX, posY))
+      rotation = nr;
     drawPiece(currentPiece, rotation, posX, posY);
   }
-  P2IFG &= ~SWITCHES;
+  if (!(p2val & BIT3)) {            // Right button (4th)
+    clearPiece(currentPiece, rotation, posX, posY);
+    if (!checkCollision(currentPiece, rotation, posX + 1, posY))
+      posX++;
+    drawPiece(currentPiece, rotation, posX, posY);
+  }
+
+  P2IFG &= ~SWITCHES;               // clear all flags
 }
 // Main entry point
 int main() {
