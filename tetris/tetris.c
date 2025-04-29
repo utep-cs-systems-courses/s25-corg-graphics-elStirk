@@ -83,12 +83,23 @@ int checkCollision(int p, int rot, int x, int y) {
   return 0;
 }
 // Fix piece into the grid
+// void fixPiece() {
+//   for (int i = 0; i < 4; i++) {
+//     int px = posX + pieces[currentPiece].blocks[rotation][i].x;
+//     int py = posY + pieces[currentPiece].blocks[rotation][i].y;
+//     if (py >= 0 && py < GRID_ROWS && px >= 0 && px < GRID_COLS)
+//       grid[py][px] = 1;
+//   }
+// }
 void fixPiece() {
   for (int i = 0; i < 4; i++) {
     int px = posX + pieces[currentPiece].blocks[rotation][i].x;
     int py = posY + pieces[currentPiece].blocks[rotation][i].y;
-    if (py >= 0 && py < GRID_ROWS && px >= 0 && px < GRID_COLS)
+    if (py >= 0 && py < GRID_ROWS && px >= 0 && px < GRID_COLS) {
       grid[py][px] = 1;
+      // draw the “permanent” block in its color:
+      drawBlock(px, py, pieces[currentPiece].color);
+    }
   }
 }
 
