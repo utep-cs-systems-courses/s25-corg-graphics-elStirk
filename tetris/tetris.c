@@ -54,6 +54,17 @@ void drawBlock(int x, int y, uint16_t color) {
 void clearBlock(int x, int y) {
   fillRectangle(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE, COLOR_BLACK);
 }
+
+void resetGame() {
+  // Limpia la matriz
+  for (int r = 0; r < GRID_ROWS; r++)
+    for (int c = 0; c < GRID_COLS; c++)
+      grid[r][c] = 0;
+
+  // Limpia pantalla y reinicia contador
+  clearScreen(COLOR_BLACK);
+  tickCount = 0;
+}
 // Draw/clear current tetromino at (x,y)
 void drawPiece(int p, int rot, int x, int y) {
   for (int i = 0; i < 4; i++) {
@@ -118,17 +129,40 @@ void newPiece() {
 }
 
 // WDT interrupt: drop and redraw
+// void wdt_c_handler() {
+//   tickCount++;
+//   redrawScreen = 1;
+//   if (tickCount % 20 == 0) {
+//     clearPiece(currentPiece, rotation, posX, posY);
+//     if (!checkCollision(currentPiece, rotation, posX, posY + 1)) {
+//       posY++;
+//     } else {
+//       fixPiece();
+//       newPiece();
+//     }
+//     drawPiece(currentPiece, rotation, posX, posY);
+//   }
+// }
 void wdt_c_handler() {
   tickCount++;
   redrawScreen = 1;
+
   if (tickCount % 20 == 0) {
     clearPiece(currentPiece, rotation, posX, posY);
+
+    // ¿Podemos bajar?
     if (!checkCollision(currentPiece, rotation, posX, posY + 1)) {
       posY++;
     } else {
-      fixPiece();
-      newPiece();
+      // Si la pieza “choca” estando en la fila 0 → game over
+      if (posY <= 0) {
+        resetGame();
+      } else {
+        fixPiece();     // Fija la pieza en el grid y la pinta
+      }
+      newPiece();       // Genera la siguiente pieza en la posición inicial
     }
+
     drawPiece(currentPiece, rotation, posX, posY);
   }
 }
