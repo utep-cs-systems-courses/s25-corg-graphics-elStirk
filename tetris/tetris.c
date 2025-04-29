@@ -52,7 +52,7 @@ void drawBlock(int x, int y, uint16_t color) {
   fillRectangle(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE, color);
 }
 void clearBlock(int x, int y) {
-  fillRectangle(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE, COLOR_RED);
+  fillRectangle(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE, COLOR_BLACK);
 }
 // Draw/clear current tetromino at (x,y)
 void drawPiece(int p, int rot, int x, int y) {
