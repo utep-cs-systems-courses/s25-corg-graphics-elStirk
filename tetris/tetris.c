@@ -30,7 +30,7 @@ static const unsigned short colors[NUM_SHAPES] = {
 #define BG_COLOR COLOR_BLACK
 
 // Estado de la pieza en caída (indice + coordenadas en celdas)
-static volatile int redrawScreen;
+volatile int redrawScreen;
 static int shapeI, posX, posY;
 
 // Función: dibuja y actualiza valor en grid
