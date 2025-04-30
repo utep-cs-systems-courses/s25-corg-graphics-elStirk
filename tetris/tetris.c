@@ -1,7 +1,7 @@
 #include <msp430.h>
 #include <libTimer.h>
 #include <string.h>
-#include <stdlib.h>            // <-- para rand() / srand()
+#include <stdlib.h>            // para rand()
 #include "lcdutils.h"
 #include "lcddraw.h"
 
@@ -52,6 +52,9 @@ unsigned short shapeColors[NUM_SHAPES] = {
 };
 #define BG_COLOR      COLOR_BLACK
 
+// Semilla para LFSR de piezas aleatorias
+static unsigned long randSeed = 12345;
+
 // --------------------------------------------------
 // Prototipos
 // --------------------------------------------------
@@ -59,6 +62,15 @@ static void draw_piece(short col, short row, char idx, char rot, unsigned short 
 static void draw_grid(void);
 static void clear_full_rows(void);
 static void draw_score_label(void);
+static char getRandomShape(void);
+
+// --------------------------------------------------
+// Devuelve un índice de forma aleatorio usando LFSR
+// --------------------------------------------------
+static char getRandomShape(void) {
+  randSeed = randSeed * 1103515245 + 12345;
+  return (randSeed >> 16) % NUM_SHAPES;
+}
 
 // --------------------------------------------------
 // Dibuja el texto "SCORE:" en la parte inferior derecha
@@ -123,7 +135,7 @@ static void clear_full_rows(void) {
       clearScreen(BG_COLOR);
       draw_grid();
       draw_score_label();
-      r--;  
+      r--;
     }
   }
 }
@@ -162,6 +174,9 @@ void switch_init(void) {
   switch_update_interrupt_sense();
 }
 
+// --------------------------------------------------
+// Maneja interrupción de los pulsadores
+// --------------------------------------------------
 void switch_interrupt_handler(void) {
   P2IE &= ~SWITCHES;
   __delay_cycles(50000);
@@ -185,33 +200,51 @@ void switch_interrupt_handler(void) {
     }
     if (valid) shapeCol = newCol;
   }
-  // SW2: rotar
+
+  // SW2: rotar o reiniciar si se mantiene >3s
   if (switches & (1<<1)) {
-    char newRot = (shapeRotation+1)%4;
-    int valid = TRUE;
-    for (int i = 0; i < 4; i++) {
-      int ox = shapes[shapeIndex][i].x;
-      int oy = shapes[shapeIndex][i].y;
-      int rx = (newRot==1? -oy: newRot==2?-ox: newRot==3?oy:ox);
-      int ry = (newRot==1? ox: newRot==2?-oy: newRot==3?-ox:oy);
-      int c = (shapeCol + rx*BLOCK_SIZE)/BLOCK_SIZE;
-      int r = (shapeRow + ry*BLOCK_SIZE)/BLOCK_SIZE;
-      if (c<0||c>=numColumns||r>=numRows||(r>=0&&grid[c][r]>=0)) { valid=FALSE; break; }
+    // Detectar pulsación larga de ~3 segundos
+    int i;
+    for (i = 0; i < 3; i++) {
+      __delay_cycles(1000000);           // ~1 segundo
+      char p2val2 = switch_update_interrupt_sense();
+      if (!(~p2val2 & (1<<1))) break;   // soltado antes de 3s
     }
-    if (valid) shapeRotation = newRot;
+    if (i >= 3) {
+      // Reiniciar juego
+      clearScreen(BG_COLOR);
+      memset(grid, -1, sizeof grid);
+      shapeIndex = shapeRotation = colIndex = 0;
+      shapeCol = 0; 
+      shapeRow = -BLOCK_SIZE*4;
+      draw_score_label();
+    } else {
+      // Pulsación corta: rotar pieza
+      char newRot = (shapeRotation+1)%4;
+      int valid = TRUE;
+      for (int j = 0; j < 4; j++) {
+        int ox = shapes[shapeIndex][j].x;
+        int oy = shapes[shapeIndex][j].y;
+        int rx = (newRot==1? -oy: newRot==2?-ox: newRot==3?oy:ox);
+        int ry = (newRot==1? ox: newRot==2?-oy: newRot==3?-ox:oy);
+        int c = (shapeCol + rx*BLOCK_SIZE)/BLOCK_SIZE;
+        int r = (shapeRow + ry*BLOCK_SIZE)/BLOCK_SIZE;
+        if (c<0||c>=numColumns||r>=numRows||(r>=0&&grid[c][r]>=0)) { valid=FALSE; break; }
+      }
+      if (valid) shapeRotation = newRot;
+    }
   }
-  // SW3: reiniciar manual
+
+  // SW3: reiniciar manual breve
   if (switches & (1<<2)) {
     clearScreen(BG_COLOR);
     memset(grid, -1, sizeof grid);
-    // nueva pieza aleatoria al reiniciar
-    shapeIndex    = rand() % NUM_SHAPES;
-    shapeRotation = 0;
-    colIndex      = rand() % numColumns;
-    shapeCol      = colIndex * BLOCK_SIZE;
-    shapeRow      = -BLOCK_SIZE*4;
+    shapeIndex = shapeRotation = colIndex = 0;
+    shapeCol = 0; 
+    shapeRow = -BLOCK_SIZE*4;
     draw_score_label();
   }
+
   // SW4: mover derecha
   if (switches & (1<<3)) {
     short newCol = shapeCol + BLOCK_SIZE;
@@ -242,8 +275,8 @@ void __interrupt_vec(PORT2_VECTOR) Port_2(void) {
 // --------------------------------------------------
 void wdt_c_handler(void) {
   static int tick=0;
-  if (++tick<64) return;
-  tick=0;
+  if (++tick < 64) return;
+  tick = 0;
   short newRow = shapeRow + BLOCK_SIZE;
   int collided = FALSE;
   for (int i = 0; i < 4; i++) {
@@ -253,68 +286,75 @@ void wdt_c_handler(void) {
     int ry = (shapeRotation==1? ox: shapeRotation==2?-oy: shapeRotation==3?-ox:oy);
     int c = (shapeCol + rx*BLOCK_SIZE)/BLOCK_SIZE;
     int r = (newRow + ry*BLOCK_SIZE)/BLOCK_SIZE;
-    if (r>=numRows || (r>=0 && grid[c][r]>=0)) { collided=TRUE; break; }
+    if (r>=numRows || (r>=0 && grid[c][r]>=0)) { collided = TRUE; break; }
   }
   if (!collided) {
     shapeRow = newRow;
   } else {
     if (shapeRow < 0) {
+      // Game over inicial
       clearScreen(BG_COLOR);
-      memset(grid,-1,sizeof grid);
-      // game over: nueva pieza aleatoria
-      shapeIndex    = rand() % NUM_SHAPES;
-      shapeRotation = 0;
-      colIndex      = rand() % numColumns;
-      shapeCol      = colIndex * BLOCK_SIZE;
-      shapeRow      = -BLOCK_SIZE*4;
+      memset(grid, -1, sizeof grid);
+      shapeIndex = shapeRotation = colIndex = 0;
+      shapeCol = 0; 
+      shapeRow = -BLOCK_SIZE*4;
       draw_score_label();
       return;
     }
-    for (int i=0;i<4;i++){
-      int ox=shapes[shapeIndex][i].x;
-      int oy=shapes[shapeIndex][i].y;
-      int rx=(shapeRotation==1? -oy: shapeRotation==2?-ox: shapeRotation==3?oy:ox);
-      int ry=(shapeRotation==1? ox: shapeRotation==2?-oy: shapeRotation==3?-ox:oy);
-      int c=(shapeCol+rx*BLOCK_SIZE)/BLOCK_SIZE;
-      int r=(shapeRow+ry*BLOCK_SIZE)/BLOCK_SIZE;
-      if(r>=0&&r<numRows) grid[c][r]=shapeIndex;
+    // Fijar pieza en la rejilla
+    for (int i = 0; i < 4; i++) {
+      int ox = shapes[shapeIndex][i].x;
+      int oy = shapes[shapeIndex][i].y;
+      int rx = (shapeRotation==1? -oy: shapeRotation==2?-ox: shapeRotation==3?oy:ox);
+      int ry = (shapeRotation==1? ox: shapeRotation==2?-oy: shapeRotation==3?-ox:oy);
+      int c = (shapeCol + rx*BLOCK_SIZE)/BLOCK_SIZE;
+      int r = (shapeRow + ry*BLOCK_SIZE)/BLOCK_SIZE;
+      if (r>=0 && r<numRows) grid[c][r] = shapeIndex;
     }
     draw_grid();
     clear_full_rows();
-    pieceStoppedFlag=TRUE;
-    // siguiente pieza al azar
-    shapeIndex    = rand() % NUM_SHAPES;
+    pieceStoppedFlag = TRUE;
+
+    // Siguiente pieza **aleatoria**
+    shapeIndex = getRandomShape();
     shapeRotation = 0;
-    colIndex      = rand() % numColumns;
-    shapeCol      = colIndex * BLOCK_SIZE;
-    shapeRow      = -BLOCK_SIZE*4;
+    colIndex = (colIndex + 1) % numColumns;
+    shapeCol = colIndex * BLOCK_SIZE;
+    shapeRow = -BLOCK_SIZE*4;
   }
-  redrawScreen=TRUE;
+  redrawScreen = TRUE;
 }
 
 // --------------------------------------------------
 // main
 // --------------------------------------------------
 int main(void) {
-  P1DIR|=BIT6; P1OUT|=BIT6;
-  configureClocks(); lcd_init();
+  P1DIR |= BIT6; 
+  P1OUT |= BIT6;
+  configureClocks(); 
+  lcd_init();
   clearScreen(BG_COLOR);
   draw_score_label();
-  switch_init(); memset(grid,-1,sizeof grid);
+  switch_init(); 
+  memset(grid, -1, sizeof grid);
+  // Inicializa semilla de rand() con valor fijo
+  srand(12345);
 
-  // semilla para el generador aleatorio (ajusta si quieres más "azar")
-  srand( (unsigned) TAR );  
-
-  // primera pieza aleatoria
-  shapeIndex    = rand() % NUM_SHAPES;
+  shapeIndex = getRandomShape();  // primera pieza aleatoria
   shapeRotation = 0;
-  colIndex      = rand() % numColumns;
-  shapeCol      = colIndex * BLOCK_SIZE;
-  shapeRow      = -BLOCK_SIZE*4;
+  colIndex = 0;
+  shapeCol = 0; 
+  shapeRow = -BLOCK_SIZE*4;
 
-  enableWDTInterrupts(); or_sr(0x8);
-  while(TRUE) {
-    if(redrawScreen) { redrawScreen=FALSE; update_moving_shape(); }
-    P1OUT &= ~BIT6; or_sr(0x10); P1OUT |= BIT6;
+  enableWDTInterrupts(); 
+  or_sr(0x8);
+  while (TRUE) {
+    if (redrawScreen) {
+      redrawScreen = FALSE; 
+      update_moving_shape();
+    }
+    P1OUT &= ~BIT6; 
+    or_sr(0x10); 
+    P1OUT |= BIT6;
   }
 }
