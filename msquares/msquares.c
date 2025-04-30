@@ -281,19 +281,33 @@ void wdt_c_handler() {
 // --------------------------------------------------
 // main
 // --------------------------------------------------
-int main() {
-  rand_state = TA0R;
-  P1DIR |= BIT6; P1OUT |= BIT6;
-  configureClocks(); lcd_init(); clearScreen(BG_COLOR);
-  switch_init(); memset(grid, -1, sizeof grid);
-  shapeIndex = simple_rand(NUM_SHAPES);
-  shapeRotation = 0;
-  shapeCol = ((numColumns / 2) - 1) * BLOCK_SIZE; // columna central
-  shapeRow = -BLOCK_SIZE * 4;
-  enableWDTInterrupts(); or_sr(0x8);
-  while (TRUE) {
-    if (redrawScreen) { redrawScreen = FALSE; update_moving_shape(); }
-    P1OUT &= ~BIT6; or_sr(0x10); P1OUT |= BIT6;
-  }
+int main(void) {
+    configureClocks();
+    lcd_init();
+    clearScreen(BG_COLOR);
+    score = 0;
+    draw_score_label();
+
+    // Combina varios registros del timer para inicializar la semilla:
+    rand_state = TA0R ^ (TA1R << 8) ^ (TA0CCR0 << 4);
+
+    switch_init();
+    memset(grid, -1, sizeof grid);
+    shapeIndex = simple_rand(NUM_SHAPES);
+    shapeRotation = 0;
+    shapeCol = ((numColumns / 2) - 1) * BLOCK_SIZE;
+    shapeRow = -BLOCK_SIZE * 4;
+
+    enableWDTInterrupts();
+    or_sr(0x8);
+    while (TRUE) {
+        if (redrawScreen) {
+            redrawScreen = FALSE;
+            update_moving_shape();
+        }
+        P1OUT &= ~BIT6;
+        or_sr(0x10);
+        P1OUT |= BIT6;
+    }
 }
 
