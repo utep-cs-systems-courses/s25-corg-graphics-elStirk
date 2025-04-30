@@ -24,7 +24,7 @@ const Offset shapes[][4] = {
 #define NUM_SHAPES (sizeof(shapes)/sizeof(shapes[0]))
 
 // Estado de la pieza en caída (índice y posición en celdas)
-volatile int redrawFlag = 1;
+volatile int redrawScreen = 1;
 static int shapeI, posX, posY;
 
 // Colores para cada forma
@@ -113,7 +113,7 @@ void wdt_c_handler() {
     posY = -2;
   }
 
-  redrawFlag = 1;
+  redrawScreen = 1;
 }
 
 int main(void) {
@@ -140,8 +140,8 @@ int main(void) {
 
   // Bucle principal: redibuja sólo la pieza móvil
   while (1) {
-    if (redrawFlag) {
-      redrawFlag = 0;
+    if (redrawScreen) {
+      redrawScreen = 0;
       update_piece();
     }
     // Modo bajo consumo hasta la próxima ISR
@@ -150,4 +150,5 @@ int main(void) {
     P1OUT |= BIT6;
   }
 }
+
 
