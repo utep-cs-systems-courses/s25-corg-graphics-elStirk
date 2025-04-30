@@ -251,7 +251,7 @@ void wdt_c_handler(void) {
   if (!collided) {
     shapeRow = newRow;
   } else {
-    if (shapeRow < SPAWN_START_Y) {
+    if (shapeRow <= SPAWN_START_Y) {
       clearScreen(BG_COLOR);
       memset(grid, -1, sizeof grid);
       shapeIndex = shapeRotation = colIndex = 0;
