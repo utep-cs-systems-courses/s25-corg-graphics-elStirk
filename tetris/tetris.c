@@ -3,6 +3,7 @@
 #include <string.h>
 #include "lcdutils.h"
 #include "lcddraw.h"
+#include <stdio.h>
 
 // --------------------------------------------------
 // Configuración de pantalla y rejilla
