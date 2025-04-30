@@ -160,7 +160,7 @@ static void clear_full_rows(void) {
       clearScreen(BG_COLOR);
       draw_grid();
       draw_score_label();
-      r--;  
+      r--;
     }
   }
 }
@@ -239,15 +239,17 @@ void switch_interrupt_handler(void) {
     if (valid) shapeRotation = newRot;
   }
 
-  // SW3: reiniciar manual
+  // SW3: reiniciar manual con pieza aleatoria
   if (switches & (1<<2)) {
     clearScreen(BG_COLOR);
     memset(grid, -1, sizeof grid);
-    score = 0;                // resetear puntaje
+    score = 0;
     randState = TA0R;
-    shapeIndex = (randState >> 16) % NUM_SHAPES;
-    shapeRotation = colIndex = 0;
-    shapeCol = 0; shapeRow = -BLOCK_SIZE*4;
+    shapeIndex    = (randState >> 16) % NUM_SHAPES;
+    colIndex      = (randState >> 8)  % numColumns;
+    shapeRotation = 0;
+    shapeCol      = colIndex * BLOCK_SIZE;
+    shapeRow      = -BLOCK_SIZE * 4;
     draw_score_label();
     sw2HoldCount = 0;
   }
@@ -288,6 +290,7 @@ void wdt_c_handler(void) {
   if (++tick < 64) return;
   tick = 0;
 
+  // Pulsación larga SW2 reinicia con pieza aleatoria
   if (!(P2IN & (1<<1))) {
     sw2HoldCount++;
     if (sw2HoldCount >= 3) {
@@ -295,9 +298,11 @@ void wdt_c_handler(void) {
       memset(grid, -1, sizeof grid);
       score = 0;
       randState = randState * 1103515245 + 12345;
-      shapeIndex = (randState >> 16) % NUM_SHAPES;
-      shapeRotation = colIndex = 0;
-      shapeCol = 0; shapeRow = -BLOCK_SIZE*4;
+      shapeIndex    = (randState >> 16) % NUM_SHAPES;
+      colIndex      = (randState >> 8)  % numColumns;
+      shapeRotation = 0;
+      shapeCol      = colIndex * BLOCK_SIZE;
+      shapeRow      = -BLOCK_SIZE * 4;
       draw_score_label();
       sw2HoldCount = 0;
       return;
@@ -306,6 +311,7 @@ void wdt_c_handler(void) {
     sw2HoldCount = 0;
   }
 
+  // Movimiento vertical y detección de colisión
   short newRow = shapeRow + BLOCK_SIZE;
   int collided = FALSE;
   for (int i = 0; i < 4; i++) {
@@ -319,17 +325,21 @@ void wdt_c_handler(void) {
   if (!collided) {
     shapeRow = newRow;
   } else {
+    // Game over si spawn colisiona arriba
     if (shapeRow < 0) {
       clearScreen(BG_COLOR);
       memset(grid, -1, sizeof grid);
       score = 0;
       randState = TA0R;
-      shapeIndex = (randState >> 16) % NUM_SHAPES;
-      shapeRotation = colIndex = 0;
-      shapeCol = 0; shapeRow = -BLOCK_SIZE*4;
+      shapeIndex    = (randState >> 16) % NUM_SHAPES;
+      colIndex      = (randState >> 8)  % numColumns;
+      shapeRotation = 0;
+      shapeCol      = colIndex * BLOCK_SIZE;
+      shapeRow      = -BLOCK_SIZE * 4;
       draw_score_label();
       return;
     }
+    // Fija la pieza actual
     for (int i = 0; i < 4; i++) {
       int ox = shapes[shapeIndex][i].x; int oy = shapes[shapeIndex][i].y;
       int rx = (shapeRotation==1?-oy:shapeRotation==2?-ox:shapeRotation==3?oy:ox);
@@ -343,13 +353,15 @@ void wdt_c_handler(void) {
     pieceStoppedFlag = TRUE;
     lastIdx = -1;
 
+    // Nuevo spawn aleatorio
     randState = randState * 1103515245 + 12345;
-    shapeIndex = (randState >> 16) % NUM_SHAPES;
+    shapeIndex    = (randState >> 16) % NUM_SHAPES;
+    colIndex      = (randState >> 8)  % numColumns;
     shapeRotation = 0;
-    colIndex      = (colIndex + 1) % numColumns;
     shapeCol      = colIndex * BLOCK_SIZE;
     shapeRow      = -BLOCK_SIZE * 4;
   }
+
   redrawScreen = TRUE;
 }
 
@@ -365,14 +377,16 @@ int main(void) {
   score = 0;
   draw_score_label();
 
-  randState = TA0R;
-  shapeIndex = (randState >> 16) % NUM_SHAPES;
+  // Spawn inicial aleatorio
+  randState      = TA0R;
+  shapeIndex     = (randState >> 16) % NUM_SHAPES;
+  colIndex       = (randState >> 8)  % numColumns;
+  shapeRotation  = 0;
+  shapeCol       = colIndex * BLOCK_SIZE;
+  shapeRow       = -BLOCK_SIZE * 4;
 
   switch_init();
   memset(grid, -1, sizeof grid);
-  shapeRotation = colIndex = 0;
-  shapeCol = 0;
-  shapeRow = -BLOCK_SIZE * 4;
 
   enableWDTInterrupts();
   or_sr(0x8);
