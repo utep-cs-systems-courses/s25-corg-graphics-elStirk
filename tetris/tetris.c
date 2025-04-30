@@ -73,14 +73,35 @@ void switch_interrupt_handler() {
   char p2val = switch_update_interrupt_sense();
   switches = ~p2val & SWITCHES;
 
-  /* SW1: mover pieza a la derecha */
+  /* SW1: mover pieza a la izquierda */
   if (switches & (1<<0)) {
+    short newCol = shapeCol - BLOCK_SIZE;
+    int canMove = TRUE;
+    for (int i = 0; i < 4; i++) {
+      int x = newCol + shapes[shapeIndex][i].x * BLOCK_SIZE;
+      int y = shapeRow + shapes[shapeIndex][i].y * BLOCK_SIZE;
+      int c = x / BLOCK_SIZE;
+      int r = y / BLOCK_SIZE;
+      if (c < 0 || (r >= 0 && grid[c][r])) {
+        canMove = FALSE;
+        break;
+      }
+    }
+    if (canMove) {
+      shapeCol = newCol;
+      colIndex = shapeCol / BLOCK_SIZE;
+      redrawScreen = TRUE;
+    }
+  }
+
+  /* SW2: mover pieza a la derecha */
+  if (switches & (1<<1)) {
     short newCol = shapeCol + BLOCK_SIZE;
     int canMove = TRUE;
     for (int i = 0; i < 4; i++) {
       int x = newCol + shapes[shapeIndex][i].x * BLOCK_SIZE;
-      int c = x / BLOCK_SIZE;
       int y = shapeRow + shapes[shapeIndex][i].y * BLOCK_SIZE;
+      int c = x / BLOCK_SIZE;
       int r = y / BLOCK_SIZE;
       if (c >= numColumns || (r >= 0 && grid[c][r])) {
         canMove = FALSE;
