@@ -297,7 +297,7 @@ void wdt_c_handler(void) {
       randState = randState * 1103515245 + 12345;
       shapeIndex = (randState >> 16) % NUM_SHAPES;
       shapeRotation = colIndex = 0;
-      shapeCol = 0; shapeRow = -BLOCK_SIZE*4;
+      shapeCol = 0; shapeRow = 8 - BLOCK_SIZE * 4;
       draw_score_label();
       sw2HoldCount = 0;
       return;
@@ -326,7 +326,7 @@ void wdt_c_handler(void) {
       randState = TA0R;
       shapeIndex = (randState >> 16) % NUM_SHAPES;
       shapeRotation = colIndex = 0;
-      shapeCol = 0; shapeRow = -BLOCK_SIZE*4;
+      shapeCol = 0; shapeRow = 8 - BLOCK_SIZE * 4;
       draw_score_label();
       return;
     }
@@ -348,7 +348,7 @@ void wdt_c_handler(void) {
     shapeRotation = 0;
     colIndex      = (colIndex + 1) % numColumns;
     shapeCol      = colIndex * BLOCK_SIZE;
-    shapeRow      = -BLOCK_SIZE * 4;
+    shapeRow = 8 - BLOCK_SIZE * 4;
   }
   redrawScreen = TRUE;
 }
@@ -372,7 +372,7 @@ int main(void) {
   memset(grid, -1, sizeof grid);
   shapeRotation = colIndex = 0;
   shapeCol = 0;
-  shapeRow = -BLOCK_SIZE * 4;
+  shapeRow = 8 - BLOCK_SIZE * 4;
 
   enableWDTInterrupts();
   or_sr(0x8);
