@@ -52,18 +52,17 @@ unsigned short shapeColors[NUM_SHAPES] = {
 };
 #define BG_COLOR      COLOR_BLACK
 
-// ** Contador de puntaje **
+// Contador de puntaje
 static int score = 0;
 
-// --------------------------------------------------
 // Prototipos
-// --------------------------------------------------
 static void draw_piece(short col, short row, char idx, char rot, unsigned short color);
 static void draw_grid(void);
 static void clear_full_rows(void);
 static void draw_score_label(void);
 static int  check_collision(short testCol, short testRow, char idx, char rot);
 static void update_moving_shape(void);
+static void wdt_tick_handler(void);  // lógica de caída
 
 // --------------------------------------------------
 // Dibuja la etiqueta y el valor de SCORE
@@ -204,22 +203,17 @@ void switch_interrupt_handler(void) {
   char p2val = switch_update_interrupt_sense();
   switches = ~p2val & SWITCHES;
 
-  // Izquierda (SW1)
-  if (switches & (1<<0)) {
+  if (switches & (1<<0)) {           // SW1: izquierda
     short nc = shapeCol - BLOCK_SIZE;
-    if (!check_collision(nc, shapeRow, shapeIndex, shapeRotation)) {
+    if (!check_collision(nc, shapeRow, shapeIndex, shapeRotation))
       shapeCol = nc;
-    }
   }
-  // Rotar (SW2)
-  if (switches & (1<<1)) {
+  if (switches & (1<<1)) {           // SW2: rotar
     char nr = (shapeRotation + 1) & 3;
-    if (!check_collision(shapeCol, shapeRow, shapeIndex, nr)) {
+    if (!check_collision(shapeCol, shapeRow, shapeIndex, nr))
       shapeRotation = nr;
-    }
   }
-  // Reiniciar manual (SW3)
-  if (switches & (1<<2)) {
+  if (switches & (1<<2)) {           // SW3: reiniciar
     clearScreen(BG_COLOR);
     memset(grid, -1, sizeof grid);
     shapeIndex = shapeRotation = colIndex = 0;
@@ -227,12 +221,10 @@ void switch_interrupt_handler(void) {
     score = 0;
     draw_score_label();
   }
-  // Derecha (SW4)
-  if (switches & (1<<3)) {
+  if (switches & (1<<3)) {           // SW4: derecha
     short nc = shapeCol + BLOCK_SIZE;
-    if (!check_collision(nc, shapeRow, shapeIndex, shapeRotation)) {
+    if (!check_collision(nc, shapeRow, shapeIndex, shapeRotation))
       shapeCol = nc;
-    }
   }
 
   redrawScreen = TRUE;
@@ -245,28 +237,23 @@ void __interrupt_vec(PORT2_VECTOR) Port_2(void) {
 }
 
 // --------------------------------------------------
-// WDT: caída, apilamiento y game over
+// Lógica de caída y apilamiento
 // --------------------------------------------------
-void wdt_c_handler(void) __attribute__ ((interrupt(WDT_VECTOR)));
-void wdt_c_handler(void) {
-  static int tick = 0;
-  if (++tick < 64) return;
-  tick = 0;
-
+static void wdt_tick_handler(void) {
   short newRow = shapeRow + BLOCK_SIZE;
   if (!check_collision(shapeCol, newRow, shapeIndex, shapeRotation)) {
     shapeRow = newRow;
   } else {
-    if (shapeRow < 0) {
+    if (shapeRow < 0) {  // game over
       clearScreen(BG_COLOR);
       memset(grid, -1, sizeof grid);
       shapeIndex = shapeRotation = colIndex = 0;
       shapeCol = 0; shapeRow = -BLOCK_SIZE*4;
       score = 0;
       draw_score_label();
-      __bic_SR_register_on_exit(LPM0_bits);  // despierta CPU
       return;
     }
+    // fija la pieza en la rejilla
     for (int i = 0; i < 4; i++) {
       int ox = shapes[shapeIndex][i].x;
       int oy = shapes[shapeIndex][i].y;
@@ -284,16 +271,22 @@ void wdt_c_handler(void) {
     draw_grid();
     clear_full_rows();
     pieceStoppedFlag = TRUE;
-
+    // siguiente pieza
     shapeIndex = (shapeIndex + 1) % NUM_SHAPES;
     shapeRotation = 0;
     colIndex = (colIndex + 1) % numColumns;
     shapeCol = colIndex * BLOCK_SIZE;
     shapeRow = -BLOCK_SIZE*4;
   }
-
   redrawScreen = TRUE;
+}
+
+// --------------------------------------------------
+// ISR mínimo para WDT: cabe en VECT11 (2 bytes de stub)
+// --------------------------------------------------
+void __attribute__((interrupt(WDT_VECTOR))) wdt_isr(void) {
   __bic_SR_register_on_exit(LPM0_bits);  // despierta CPU
+  wdt_tick_handler();                    // lógica pesada fuera del stub
 }
 
 // --------------------------------------------------
@@ -310,13 +303,13 @@ int main(void) {
   memset(grid, -1, sizeof grid);
   shapeIndex = shapeRotation = colIndex = 0;
   shapeCol = 0; shapeRow = -BLOCK_SIZE*4;
-  enableWDTInterrupts();  // habilita WDT y GIE
+  enableWDTInterrupts();      // habilita WDT y GIE
 
   while (TRUE) {
     if (redrawScreen) {
       redrawScreen = FALSE;
       update_moving_shape();
     }
-    __bis_SR_register(LPM0_bits + GIE);  // entra en LPM0 hasta próxima interrupción
+    __bis_SR_register(LPM0_bits + GIE);  // LPM0 hasta la próxima ISR
   }
 }
