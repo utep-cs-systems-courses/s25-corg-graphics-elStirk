@@ -1,7 +1,6 @@
 #include <msp430.h>
 #include <libTimer.h>
 #include <string.h>
-#include <stdio.h>       // para sprintf
 #include "lcdutils.h"
 #include "lcddraw.h"
 
@@ -60,7 +59,7 @@ unsigned short shapeColors[NUM_SHAPES] = {
 static unsigned long randState;
 
 // --------------------------------------------------
-// Detección de pulsación larga en SW2 (~3s)
+// Contador para pulsación larga en SW2 (~3s)
 // --------------------------------------------------
 static int sw2HoldCount = 0;
 
@@ -71,14 +70,36 @@ static void draw_piece(short col, short row, char idx, char rot, unsigned short 
 static void draw_grid(void);
 static void clear_full_rows(void);
 static void draw_score_label(void);
+static void itoa_simple(int val, char *buf);
+
+// --------------------------------------------------
+// Convierte entero a texto simple (base 10)
+// --------------------------------------------------
+static void itoa_simple(int val, char *buf) {
+  int i = 0;
+  if (val == 0) {
+    buf[i++] = '0';
+  } else {
+    char tmp[6]; int t = 0;
+    while (val > 0 && t < 5) {
+      tmp[t++] = '0' + (val % 10);
+      val /= 10;
+    }
+    while (t--) buf[i++] = tmp[t];
+  }
+  buf[i] = '\0';
+}
 
 // --------------------------------------------------
 // Dibuja el texto "SCORE:" y el valor en la esquina superior izquierda
 // --------------------------------------------------
 static void draw_score_label(void) {
-  char buf[16];
-  sprintf(buf, "SCORE:%d", score);
-  drawString5x7(0, 0, buf, COLOR_WHITE, BG_COLOR);
+  // limpia área superior para evitar ghosting
+  fillRectangle(0, 0, SCREEN_WIDTH, 8, BG_COLOR);
+  char buf[6];
+  itoa_simple(score, buf);
+  drawString5x7(0, 0, "SCORE:", COLOR_WHITE, BG_COLOR);
+  drawString5x7(6*5, 0, buf, COLOR_WHITE, BG_COLOR);
 }
 
 // --------------------------------------------------
@@ -110,10 +131,12 @@ static void draw_grid(void) {
   for (int c = 0; c < numColumns; c++) {
     for (int r = 0; r < numRows; r++) {
       signed char idx = grid[c][r];
-      if (idx >= 0)
-        fillRectangle(c*BLOCK_SIZE, r*BLOCK_SIZE,
+      if (idx >= 0) {
+        fillRectangle(c*BLOCK_SIZE,
+                      r*BLOCK_SIZE,
                       BLOCK_SIZE, BLOCK_SIZE,
                       shapeColors[idx]);
+      }
     }
   }
 }
@@ -128,20 +151,16 @@ static void clear_full_rows(void) {
       if (grid[c][r] < 0) { full = FALSE; break; }
     }
     if (full) {
-      // línea completa: aumenta puntaje
       score += 5;
-      // desplazar filas superiores hacia abajo
       for (int rr = r; rr > 0; rr--)
         for (int c = 0; c < numColumns; c++)
           grid[c][rr] = grid[c][rr-1];
-      // limpiar fila superior nueva
       for (int c = 0; c < numColumns; c++)
         grid[c][0] = -1;
-      // refrescar pantalla completa
       clearScreen(BG_COLOR);
       draw_grid();
       draw_score_label();
-      r--;  // reevalúa misma fila tras desplazamiento
+      r--;  
     }
   }
 }
@@ -162,7 +181,7 @@ static void update_moving_shape(void) {
 }
 
 // --------------------------------------------------
-// Botones con debounce
+// Botones con debounce e interrupciones
 // --------------------------------------------------
 #define SWITCHES 15
 volatile int switches = 0;
@@ -182,9 +201,6 @@ void switch_init(void) {
   switch_update_interrupt_sense();
 }
 
-// --------------------------------------------------
-// Manejador de interrupción de botones (SW1-SW4)
-// --------------------------------------------------
 void switch_interrupt_handler(void) {
   P2IE &= ~SWITCHES;
   __delay_cycles(50000);
@@ -198,7 +214,8 @@ void switch_interrupt_handler(void) {
     short newCol = shapeCol - BLOCK_SIZE;
     int valid = TRUE;
     for (int i = 0; i < 4; i++) {
-      int ox = shapes[shapeIndex][i].x; int oy = shapes[shapeIndex][i].y;
+      int ox = shapes[shapeIndex][i].x;
+      int oy = shapes[shapeIndex][i].y;
       int rx = (shapeRotation==1?-oy:shapeRotation==2?-ox:shapeRotation==3?oy:ox);
       int ry = (shapeRotation==1?ox:shapeRotation==2?-oy:shapeRotation==3?-ox:oy);
       int c = (newCol + rx*BLOCK_SIZE)/BLOCK_SIZE;
