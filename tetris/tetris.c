@@ -20,8 +20,12 @@ const Offset shapes[][4] = {
 #define NUM_COLUMNS 5
 static short colPositions[NUM_COLUMNS];
 
-// Registro de piezas colocadas para stacking
-#define MAX_PLACED 100
+// Registro de piezas colocadas para stacking (reducción de memoria)
+// Cálculo de capacidad de stacking:
+// Pantalla rotada: altura vertical = 128px, BLOCK_SIZE = 5px → 128/5 = 25 filas
+// Altura máxima de pieza = 2 bloques → 25/2 = 12 piezas por columna
+// NUM_COLUMNS = 5 → 12*5 = 60 piezas máximo en pantalla
+#define MAX_PLACED 60
 typedef struct { short col, row; char idx; } Placed;
 static Placed placed[MAX_PLACED];
 static int placedCount = 0;
