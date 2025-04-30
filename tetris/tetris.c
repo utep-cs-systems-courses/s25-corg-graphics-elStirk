@@ -140,14 +140,20 @@ static void clear_full_rows(void) {
 // Actualiza la pieza móvil
 // --------------------------------------------------
 static void update_moving_shape(void) {
-  if (lastIdx >= 0 && !pieceStoppedFlag)
+  // Borra siempre la posición anterior de la pieza
+  if (lastIdx >= 0) {
     draw_piece(lastCol, lastRow, lastIdx, lastRot, BG_COLOR);
-  draw_piece(shapeCol, shapeRow, shapeIndex, shapeRotation,
-             shapeColors[shapeIndex]);
-  lastCol = shapeCol; lastRow = shapeRow;
-  lastIdx = shapeIndex; lastRot = shapeRotation;
+  }
+  // Dibuja la pieza en la nueva posición
+  draw_piece(shapeCol, shapeRow, shapeIndex, shapeRotation, shapeColors[shapeIndex]);
+  // Actualiza las coordenadas de la última posición
+  lastCol = shapeCol;
+  lastRow = shapeRow;
+  lastIdx = shapeIndex;
+  lastRot = shapeRotation;
   pieceStoppedFlag = FALSE;
 }
+
 
 // --------------------------------------------------
 // Botones con debounce
@@ -342,4 +348,3 @@ int main(void) {
     P1OUT &= ~BIT6; or_sr(0x10); P1OUT |= BIT6;
   }
 }
-
