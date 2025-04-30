@@ -108,54 +108,34 @@ void switch_interrupt_handler() {
     if (canMove) { shapeCol = newCol; redrawScreen = TRUE; }
   }
 
-  /* SW2: mover derecha */
+  /* SW2: rotar figura */
   if (switches & (1<<1)) {
-    short newCol = shapeCol + BLOCK_SIZE;
-    int canMove = TRUE;
+    char newRot = (shapeRotation + 1) % 4;
+    int canRotate = TRUE;
     for (int i = 0; i < 4; i++) {
       int ox = shapes[shapeIndex][i].x;
       int oy = shapes[shapeIndex][i].y;
       int rx, ry;
-      switch(shapeRotation) {
+      switch(newRot) {
         case 0: rx = ox;  ry = oy;  break;
         case 1: rx = -oy; ry = ox;  break;
         case 2: rx = -ox; ry = -oy; break;
         case 3: rx = oy;  ry = -ox; break;
       }
-      int x = newCol + rx * BLOCK_SIZE;
+      int x = shapeCol + rx * BLOCK_SIZE;
       int y = shapeRow + ry * BLOCK_SIZE;
       int c = x / BLOCK_SIZE;
       int r = y / BLOCK_SIZE;
-      if (c >= numColumns || (r >= 0 && grid[c][r])) { canMove = FALSE; break; }
+      if (c < 0 || c >= numColumns || r >= numRows || (r >= 0 && grid[c][r])) {
+        canRotate = FALSE;
+        break;
+      }
     }
-    if (canMove) { shapeCol = newCol; redrawScreen = TRUE; }
+    if (canRotate) { shapeRotation = newRot; redrawScreen = TRUE; }
   }
 
-  /* SW3: mover derecha (igual que SW2) */
+  /* SW3: reinicio */
   if (switches & (1<<2)) {
-    short newCol = shapeCol + BLOCK_SIZE;
-    int canMove = TRUE;
-    for (int i = 0; i < 4; i++) {
-      int ox = shapes[shapeIndex][i].x;
-      int oy = shapes[shapeIndex][i].y;
-      int rx, ry;
-      switch(shapeRotation) {
-        case 0: rx = ox;  ry = oy;  break;
-        case 1: rx = -oy; ry = ox;  break;
-        case 2: rx = -ox; ry = -oy; break;
-        case 3: rx = oy;  ry = -ox; break;
-      }
-      int x = newCol + rx * BLOCK_SIZE;
-      int y = shapeRow + ry * BLOCK_SIZE;
-      int c = x / BLOCK_SIZE;
-      int r = y / BLOCK_SIZE;
-      if (c >= numColumns || (r >= 0 && grid[c][r])) { canMove = FALSE; break; }
-    }
-    if (canMove) { shapeCol = newCol; redrawScreen = TRUE; }
-  }
-
-  /* SW4: reinicio */
-  if (switches & (1<<3)) {
     clearScreen(BG_COLOR);
     memset(grid, 0, sizeof grid);
     shapeIndex    = 0;
@@ -164,6 +144,29 @@ void switch_interrupt_handler() {
     shapeCol      = 0;
     shapeRow      = -BLOCK_SIZE * 4;
     redrawScreen  = TRUE;
+  }
+
+  /* SW4: mover derecha */
+  if (switches & (1<<3)) {
+    short newCol = shapeCol + BLOCK_SIZE;
+    int canMove = TRUE;
+    for (int i = 0; i < 4; i++) {
+      int ox = shapes[shapeIndex][i].x;
+      int oy = shapes[shapeIndex][i].y;
+      int rx, ry;
+      switch(shapeRotation) {
+        case 0: rx = ox;  ry = oy;  break;
+        case 1: rx = -oy; ry = ox;  break;
+        case 2: rx = -ox; ry = -oy; break;
+        case 3: rx = oy;  ry = -ox; break;
+      }
+      int x = newCol + rx * BLOCK_SIZE;
+      int y = shapeRow + ry * BLOCK_SIZE;
+      int c = x / BLOCK_SIZE;
+      int r = y / BLOCK_SIZE;
+      if (c >= numColumns || (r >= 0 && grid[c][r])) { canMove = FALSE; break; }
+    }
+    if (canMove) { shapeCol = newCol; redrawScreen = TRUE; }
   }
 }
 
