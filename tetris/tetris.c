@@ -215,6 +215,10 @@ void wdt_c_handler(void) {
 // Debounce y lógica de botones
 // --------------------------------------------------
 #define SWITCHES 15
+#define SW1 1
+#define SW2 2
+#define SW3 4
+#define SW4 8
 static char switch_update_interrupt_sense(void) {
   char p2val = P2IN;
   P2IES |= (p2val & SWITCHES);
