@@ -27,7 +27,7 @@ static Placed placed[MAX_PLACED];
 static int placedCount = 0;
 
 // Estado de la pieza en caída
-static volatile int redrawScreen = 1;
+volatile int redrawScreen = 1;
 static short shapeCol, shapeRow;
 static char shapeIndex = 0, colIndex = 0;
 
