@@ -2,6 +2,7 @@
 #include <libTimer.h>
 #include <string.h>
 #include "lcdutils.h"
+#include <stdlib.h>  // para rand() y srand()
 #include "lcddraw.h"
 
 // --------------------------------------------------
@@ -327,7 +328,8 @@ void wdt_c_handler(void) {
     // Evita que update_moving_shape borre bloques fijos
     lastIdx = -1;
     // Prepara la siguiente pieza
-    shapeIndex    = (shapeIndex + 1) % NUM_SHAPES;
+    // Elige aleatoriamente la siguiente figura
+    shapeIndex = rand() % NUM_SHAPES;
     shapeRotation = 0;
     colIndex      = (colIndex + 1) % numColumns;
     shapeCol      = colIndex * BLOCK_SIZE;
