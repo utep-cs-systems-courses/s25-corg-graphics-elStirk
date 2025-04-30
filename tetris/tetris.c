@@ -33,7 +33,7 @@ Pos positions[] = {
 #define NUM_POSITIONS (sizeof(positions)/sizeof(positions[0]))
 
 // Variables de estado compartidas
-static int redrawScreen = 1;
+volatile int redrawScreen = 1;
 static short shapeCol, shapeRow;
 static char shapeIndex = 0, rowIndex = 0;
 
