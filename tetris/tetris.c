@@ -24,7 +24,7 @@ const Offset shapes[][4] = {
 #define NUM_SHAPES (sizeof(shapes)/sizeof(shapes[0]))
 
 // Estado de la pieza en caída (índice y posición en celdas)
-static volatile int redrawFlag = 1;
+volatile int redrawFlag = 1;
 static int shapeI, posX, posY;
 
 // Colores para cada forma
