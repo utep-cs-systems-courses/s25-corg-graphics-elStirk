@@ -45,7 +45,7 @@ static char  colIndex      = 0;
 static short lastCol = 0, lastRow = 0;
 static char  lastIdx  = -1;
 static char  lastRot  = 0;
-static unsigned int rand_state = 12345; // semilla inicial cualquiera
+static unsigned int rand_state = 4321; // semilla inicial cualquiera
 
 unsigned short shapeColors[NUM_SHAPES] = {
   COLOR_RED, COLOR_GREEN, COLOR_ORANGE, COLOR_BLUE
