@@ -12,7 +12,7 @@
 #define SCREEN_WIDTH   128
 #define SCREEN_HEIGHT  160
 #define BLOCK_SIZE     10
-#define Y_OFFSET         5   // desplaza toda la rejilla hacia abajo para el marcador
+#define Y_OFFSET        12  // margen superior para texto de puntuación   // desplaza toda la rejilla hacia abajo para el marcador
 
 #define MAX_COLUMNS    (SCREEN_WIDTH  / BLOCK_SIZE)
 #define MAX_ROWS       ((SCREEN_HEIGHT - Y_OFFSET) / BLOCK_SIZE)
@@ -342,3 +342,4 @@ int main() {
     P1OUT |= BIT6;
   }
 }
+
