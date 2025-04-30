@@ -21,7 +21,7 @@ static short colPositions[5];
 #define NUM_COLUMNS 5
 
 // Variables de estado compartidas
-static volatile int redrawScreen = 1;
+volatile int redrawScreen = 1;
 static short shapeCol, shapeRow;
 static char shapeIndex = 0, colIndex = 0;
 
