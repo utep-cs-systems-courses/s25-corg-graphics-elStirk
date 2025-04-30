@@ -1,39 +1,50 @@
 #include <msp430.h>
 #include <libTimer.h>
+#include <string.h>
 #include "lcdutils.h"
 #include "lcddraw.h"
 
-// Tamaño de cada bloque (en píxeles)
-#define BLOCK_SIZE 10
+// --------------------------------------------------
+// Configuración de pantalla y rejilla
+// --------------------------------------------------
+#define SCREEN_WIDTH   160
+#define SCREEN_HEIGHT  128
+#define BLOCK_SIZE     10
 
+// Derivado de arriba: 160/10 = 16 columnas, 128/10 = 12 filas
+#define MAX_COLUMNS    (SCREEN_WIDTH  / BLOCK_SIZE)  // 16
+#define MAX_ROWS       (SCREEN_HEIGHT / BLOCK_SIZE)  // 12
+
+// --------------------------------------------------
 // Formas Tetris (4 offsets cada una)
+// --------------------------------------------------
 typedef struct { short x, y; } Offset;
 const Offset shapes[][4] = {
-  {{0,0},{1,0},{0,1},{1,1}},  // Cuadrado
-  {{0,0},{1,0},{2,0},{3,0}},  // Línea
+  {{0,0},{1,0},{0,1},{1,1}},  // cuadrado
+  {{0,0},{1,0},{2,0},{3,0}},  // línea
   {{0,0},{0,1},{1,1},{2,1}},  // L invertida
   {{1,0},{0,1},{1,1},{2,1}}   // T
 };
-#define NUM_SHAPES (sizeof(shapes)/sizeof(shapes[0]))
+#define NUM_SHAPES  (sizeof(shapes)/sizeof(shapes[0]))
 
-// Columnas según anchura de pantalla
-static int numColumns;
+// --------------------------------------------------
+// Variables globales
+// --------------------------------------------------
+// Rejilla de ocupación: 1 = bloque fijo, 0 = vacío
+static char grid[MAX_COLUMNS][MAX_ROWS];
+static int  numColumns = MAX_COLUMNS;
+static int  numRows    = MAX_ROWS;
 
-// Apilamiento de piezas fijas (aunque sólo guardamos el “ancla” de cada pieza)
-typedef struct { short col, row; char idx; } Placed;
-#define MAX_PLACED 30
-static Placed placed[MAX_PLACED];
-static int placedCount = 0;
-
-// Flags y estado global
+// Flags para refresco y para no borrar pieza fija
 enum { FALSE = 0, TRUE = 1 };
-volatile int redrawScreen     = TRUE;      // para indicar al main loop que dibuje
-volatile int pieceStoppedFlag = FALSE;     // para no borrar la pieza fija
+volatile int redrawScreen     = TRUE;
+volatile int pieceStoppedFlag = FALSE;
 
+// Estado de la pieza móvil
 static short shapeCol, shapeRow;
 static char  shapeIndex = 0, colIndex = 0;
 
-// Última posición/dibujo móvil para borrado selectivo
+// Para borrado selectivo de la pieza móvil
 static short lastCol = 0, lastRow = 0;
 static char  lastIdx = -1;
 
@@ -41,9 +52,11 @@ static char  lastIdx = -1;
 unsigned short shapeColors[NUM_SHAPES] = {
   COLOR_RED, COLOR_GREEN, COLOR_ORANGE, COLOR_BLUE
 };
-#define BG_COLOR COLOR_BLACK
+#define BG_COLOR  COLOR_BLACK
 
-// Dibuja una forma completa en (col,row) con el color dado
+// --------------------------------------------------
+// Funciones de dibujo
+// --------------------------------------------------
 static void draw_piece(short col, short row, char idx, unsigned short color) {
   for (int i = 0; i < 4; i++) {
     int x = col + shapes[idx][i].x * BLOCK_SIZE;
@@ -52,15 +65,14 @@ static void draw_piece(short col, short row, char idx, unsigned short color) {
   }
 }
 
-// Solo borra la pieza anterior si NO acabamos de fijarla
 static void update_moving_shape(void) {
+  // Borra la pieza previa sólo si no acabó de fijarse
   if (lastIdx >= 0 && !pieceStoppedFlag) {
-    // Borra la pieza móvil previa
     draw_piece(lastCol, lastRow, lastIdx, BG_COLOR);
   }
-  // Dibuja la pieza en su nueva posición
+  // Dibuja pieza móvil en su posición actual
   draw_piece(shapeCol, shapeRow, shapeIndex, shapeColors[shapeIndex]);
-  // Guarda para el próximo ciclo
+  // Guarda para el siguiente ciclo
   lastCol = shapeCol;
   lastRow = shapeRow;
   lastIdx = shapeIndex;
@@ -68,61 +80,80 @@ static void update_moving_shape(void) {
   pieceStoppedFlag = FALSE;
 }
 
-// WDT ISR: controla caída, detección de colisión y apilamiento
+// --------------------------------------------------
+// ISR del Watchdog: mueve pieza, comprueba colisión y apila
+// --------------------------------------------------
 void wdt_c_handler() {
   static int tick = 0;
-  if (++tick < 64) return;  // controla velocidad (~512Hz/64)
+  if (++tick < 64) return;  // ralentiza (~512Hz/64)
   tick = 0;
 
-  // Mueve la pieza hacia abajo
+  // Adelanta la pieza
   shapeRow += BLOCK_SIZE;
 
-  // Comprueba colisión con suelo o con piezas ya fijas
+  // Comprueba colisión bloque a bloque
   int collided = FALSE;
-  if (shapeRow + BLOCK_SIZE > screenHeight - 1) {
-    collided = TRUE;
-  } else {
-    for (int p = 0; p < placedCount && !collided; p++) {
-      if (shapeCol == placed[p].col &&
-          shapeRow + BLOCK_SIZE == placed[p].row) {
-        collided = TRUE;
-      }
+  for (int i = 0; i < 4; i++) {
+    int x = shapeCol + shapes[shapeIndex][i].x * BLOCK_SIZE;
+    int y = shapeRow + BLOCK_SIZE + shapes[shapeIndex][i].y * BLOCK_SIZE;
+    int colBlock = x / BLOCK_SIZE;
+    int rowBlock = y / BLOCK_SIZE;
+
+    // Si sobrepasa suelo
+    if (rowBlock >= numRows) {
+      collided = TRUE;
+      break;
+    }
+    // Si cae sobre un bloque previo (y dentro de pantalla)
+    if (rowBlock >= 0 && grid[colBlock][rowBlock]) {
+      collided = TRUE;
+      break;
     }
   }
 
   if (collided) {
-    // Retrocede la pieza un paso
+    // Retrocede un paso
     shapeRow -= BLOCK_SIZE;
-    // Guarda y dibuja la pieza fija
-    if (placedCount < MAX_PLACED) {
-      placed[placedCount++] = (Placed){ shapeCol, shapeRow, shapeIndex };
-      draw_piece(shapeCol, shapeRow, shapeIndex, shapeColors[shapeIndex]);
+    // Marca en grid los 4 bloques de la pieza fija
+    for (int i = 0; i < 4; i++) {
+      int x = shapeCol + shapes[shapeIndex][i].x * BLOCK_SIZE;
+      int y = shapeRow + shapes[shapeIndex][i].y * BLOCK_SIZE;
+      int colBlock = x / BLOCK_SIZE;
+      int rowBlock = y / BLOCK_SIZE;
+      if (rowBlock >= 0 && rowBlock < numRows) {
+        grid[colBlock][rowBlock] = 1;
+      }
     }
-    // Indica que acabo de fijar para que no se borre
+    // Dibuja la pieza ya fija
+    draw_piece(shapeCol, shapeRow, shapeIndex, shapeColors[shapeIndex]);
+    // Evita que update_moving_shape la borre
     pieceStoppedFlag = TRUE;
 
-    // Genera nueva pieza en la siguiente columna
+    // Prepara la siguiente pieza
     shapeIndex = (shapeIndex + 1) % NUM_SHAPES;
-    colIndex   = (colIndex + 1) % numColumns;
+    colIndex   = (colIndex   + 1) % numColumns;
     shapeCol   = colIndex * BLOCK_SIZE;
     shapeRow   = -BLOCK_SIZE * 4;
   }
 
-  // Señala al main loop que redibuje
+  // Señal para el bucle principal
   redrawScreen = TRUE;
 }
 
+// --------------------------------------------------
+// main()
+// --------------------------------------------------
 int main() {
-  // Inicialización de hardware
-  P1DIR |= BIT6; P1OUT |= BIT6;  // LED en P1.6
+  // Hardware
+  P1DIR |= BIT6; P1OUT |= BIT6;   // LED en P1.6
   configureClocks();
   lcd_init();
   clearScreen(BG_COLOR);
 
-  // Calcula cuántas columnas caben
-  numColumns = screenWidth / BLOCK_SIZE;
+  // Inicializa rejilla a 0
+  memset(grid, 0, sizeof grid);
 
-  // Estado inicial de la pieza móvil
+  // Pieza inicial
   shapeIndex = 0;
   colIndex   = 0;
   shapeCol   = 0;
@@ -132,17 +163,15 @@ int main() {
   enableWDTInterrupts();
   or_sr(0x8);
 
-  // Bucle principal: solo redibuja la pieza móvil
+  // Bucle principal
   while (TRUE) {
     if (redrawScreen) {
       redrawScreen = FALSE;
       update_moving_shape();
     }
-    // Entra en modo de bajo consumo hasta la próxima ISR
+    // Bajo consumo hasta la próxima ISR
     P1OUT &= ~BIT6;
     or_sr(0x10);
     P1OUT |= BIT6;
   }
 }
-
-
