@@ -70,6 +70,12 @@ void switch_init() {
 }
 
 void switch_interrupt_handler() {
+  // Borrar posición anterior para evitar restos fantasma
+  if (lastIdx >= 0) {
+    draw_piece(lastCol, lastRow, lastIdx, BG_COLOR);
+  }
+  pieceStoppedFlag = FALSE;
+
   char p2val = switch_update_interrupt_sense();
   switches = ~p2val & SWITCHES;
 
