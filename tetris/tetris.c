@@ -23,7 +23,7 @@ const Offset shapes[][4] = {
 
 // Estado de pieza en caída
 enum { FALSE=0, TRUE=1 };
-static volatile int redraw = TRUE;
+int redraw = TRUE;
 static short shapeX, shapeY;
 static char shapeI;
 
