@@ -269,23 +269,16 @@ void wdt_c_handler() {
   if (!collided) {
     shapeRow = newRow;
   } else {
-    // Game Over si spawn bloqueado o no entró mínimamente
-    for (int i = 0; i < 4; i++) {
-      int ox = shapes[shapeIndex][i].x;
-      int oy = shapes[shapeIndex][i].y;
-      int rx = (shapeRotation==1? -oy: shapeRotation==2? -ox: shapeRotation==3? oy: ox);
-      int ry = (shapeRotation==1? ox: shapeRotation==2? -oy: shapeRotation==3? -ox: oy);
-      int c = (shapeCol + rx*BLOCK_SIZE)/BLOCK_SIZE;
-      int r = (shapeRow + ry*BLOCK_SIZE)/BLOCK_SIZE;
-      if (r<0 || grid[c][r]>=0) {
-        clearScreen(BG_COLOR);
-        memset(grid, -1, sizeof grid);
-        score = 0;
-        draw_score();
-        shapeIndex = shapeRotation = colIndex = 0;
-        shapeCol = 0; shapeRow = -BLOCK_SIZE * 4;
-        return;
-      }
+    // Game Over si la pieza no ha entrado en la zona visible
+    if (shapeRow < 0) {
+      clearScreen(BG_COLOR);
+      memset(grid, -1, sizeof grid);
+      score = 0;
+      draw_score();
+      shapeIndex = shapeRotation = colIndex = 0;
+      shapeCol = 0;
+      shapeRow = -BLOCK_SIZE * 4;
+      return;
     }
     // fijar pieza en rejilla
     for (int i = 0; i < 4; i++) {
@@ -305,6 +298,25 @@ void wdt_c_handler() {
     colIndex = (colIndex+1) % numColumns;
     shapeCol = colIndex * BLOCK_SIZE;
     shapeRow = -BLOCK_SIZE*4;
+    // Spawn overlap detection: si al aparecer colisiona con bloque estático
+    for (int i = 0; i < 4; i++) {
+      int ox = shapes[shapeIndex][i].x;
+      int oy = shapes[shapeIndex][i].y;
+      int rx = (shapeRotation==1? -oy : shapeRotation==2? -ox: shapeRotation==3? oy: ox);
+      int ry = (shapeRotation==1? ox : shapeRotation==2? -oy: shapeRotation==3? -ox: oy);
+      int c = (shapeCol + rx*BLOCK_SIZE)/BLOCK_SIZE;
+      int r = (shapeRow + ry*BLOCK_SIZE)/BLOCK_SIZE;
+      if (r >= 0 && r < numRows && grid[c][r] >= 0) {
+        clearScreen(BG_COLOR);
+        memset(grid, -1, sizeof grid);
+        score = 0;
+        draw_score();
+        shapeIndex = shapeRotation = colIndex = 0;
+        shapeCol = 0;
+        shapeRow = -BLOCK_SIZE * 4;
+        return;
+      }
+    }
   }
   redrawScreen = TRUE;
 }
@@ -342,4 +354,3 @@ int main() {
     P1OUT |= BIT6;
   }
 }
-
