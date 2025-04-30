@@ -16,12 +16,14 @@ const Offset shapes[][4] = {
 };
 #define NUM_SHAPES (sizeof(shapes)/sizeof(shapes[0]))
 
-// Cálculos de grilla dinámica según pantalla
-static int numColumns;            // columnas posibles en la anchura
-static int numRows;               // filas posibles en la altura
+// Número de columnas en la grilla según pantalla
+static int numColumns;  // = screenWidth / BLOCK_SIZE;
 
 // Registro de piezas colocadas para stacking
-#define MAX_PLACED 192          // límite máximo seguro (16 cols * 12 filas)
+// Calculo: ancho 160px/10=16 cols, alto 128px/10=12 filas, área=16*12=192 células,
+// cada pieza usa 4 células → 192/4 = 48 piezas como máximo
+#define MAX_PLACED 48
+
 typedef struct { short col, row; char idx; } Placed;
 static Placed placed[MAX_PLACED];
 static int placedCount = 0;
@@ -76,12 +78,11 @@ void wdt_c_handler() {
   if (shapeRow + BLOCK_SIZE > screenHeight - 1) {
     collided = 1;
   } else {
-    // Verificar contra piezas colocadas
+    // Verificar colisión con piezas colocadas
     for (int p = 0; p < placedCount; p++) {
       for (int i = 0; i < 4; i++) {
         int x = shapeCol + shapes[shapeIndex][i].x * BLOCK_SIZE;
         int y = shapeRow + shapes[shapeIndex][i].y * BLOCK_SIZE;
-        // colisión si la nueva Y alcanza la fila de pieza colocada
         if (y + BLOCK_SIZE > placed[p].row &&
             x == placed[p].col + shapes[placed[p].idx][i].x * BLOCK_SIZE) {
           collided = 1;
@@ -95,11 +96,11 @@ void wdt_c_handler() {
   if (collided) {
     // Ajustar posición final justo arriba
     shapeRow -= BLOCK_SIZE;
-    // Guardar pieza en el array si hay espacio
+    // Guardar pieza en el array
     if (placedCount < MAX_PLACED) {
       placed[placedCount++] = (Placed){ shapeCol, shapeRow, shapeIndex };
     }
-    // Generar nueva pieza en próxima columna
+    // Nueva pieza en siguiente columna
     shapeIndex = (shapeIndex + 1) % NUM_SHAPES;
     colIndex   = (colIndex   + 1) % numColumns;
     shapeCol   = colIndex * BLOCK_SIZE;
@@ -114,25 +115,27 @@ int main() {
   lcd_init();
   clearScreen(BG_COLOR);
 
-  // Calcular grilla según pantalla rotada
+  // Calcular número de columnas
   numColumns = screenWidth / BLOCK_SIZE;
-  numRows    = screenHeight / BLOCK_SIZE;
 
-  // Coordenadas iniciales de la pieza
+  // Estado inicial de la pieza
   shapeIndex = 0;
   colIndex   = 0;
-  shapeCol   = colIndex * BLOCK_SIZE;
+  shapeCol   = 0;
   shapeRow   = -BLOCK_SIZE * 4;
 
-  enableWDTInterrupts();                  // activar WDT
-  or_sr(0x8);                             // interrupciones globales
+  enableWDTInterrupts();                 // activar WDT
+  or_sr(0x8);                            // interrupciones globales
 
   while (1) {
     if (redrawScreen) {
       redrawScreen = 0;
       draw_all();
     }
-    P1OUT &= ~BIT6; or_sr(0x10); P1OUT |= BIT6; // CPU OFF entre ISR
+    // Sleep hasta próxima ISR
+    P1OUT &= ~BIT6;
+    or_sr(0x10);
+    P1OUT |= BIT6;
   }
 }
 
