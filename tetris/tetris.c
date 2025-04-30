@@ -27,7 +27,7 @@ static int placedCount = 0;
 
 // Estado de la pieza en caída y pantalla
 enum { FALSE = 0, TRUE = 1 };
-static volatile int redrawScreen = TRUE;
+volatile int redrawScreen = TRUE;
 static short shapeCol, shapeRow;
 static char shapeIndex, colIndex;
 
