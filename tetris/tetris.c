@@ -3,135 +3,140 @@
 #include "lcdutils.h"
 #include "lcddraw.h"
 
-// Tamaño de cada bloque (en píxeles)
+// Tamaño de bloque (px)
 #define BLOCK_SIZE 10
 
-// Formas Tetris (4 offsets cada una)
-typedef struct { short x, y; } Offset;
+// Dimensiones de la grilla
+#define COLS (screenWidth / BLOCK_SIZE)   // 16
+#define ROWS (screenHeight / BLOCK_SIZE)  // 12
+
+// Grid que almacena color de cada celda (0 = BG)
+static unsigned short grid[COLS][ROWS];
+
+// Offsets de las piezas (4 bloques)
+typedef struct { int x,y; } Offset;
 const Offset shapes[][4] = {
-  {{0,0},{1,0},{0,1},{1,1}},  // Cuadrado
-  {{0,0},{1,0},{2,0},{3,0}},  // Línea
-  {{0,0},{0,1},{1,1},{2,1}},  // L invertida
+  {{0,0},{1,0},{0,1},{1,1}},  // O
+  {{0,0},{1,0},{2,0},{3,0}},  // I
+  {{0,0},{0,1},{1,1},{2,1}},  // L
   {{1,0},{0,1},{1,1},{2,1}}   // T
 };
 #define NUM_SHAPES (sizeof(shapes)/sizeof(shapes[0]))
 
-// Columnas según anchura de pantalla
-static int numColumns;
-
-// Apilamiento de piezas fijas
-typedef struct { short col, row; char idx; } Placed;
-#define MAX_PLACED 30  // 5 columnas × 6 piezas (128/ BLOCK_SIZE = 12 filas /2)
-static Placed placed[MAX_PLACED];
-static int placedCount = 0;
-
-// Estado de la pieza en caída
-enum { FALSE = 0, TRUE = 1 };
-volatile int redrawScreen = TRUE;      // debe ser global para el handler
-static short shapeCol, shapeRow;
-static char shapeIndex = 0, colIndex = 0;
+// Índice y posición de la pieza en caída
+enum { FALSE=0, TRUE=1 };
+static volatile int redrawFlag = TRUE;
+static int shapeI, posX, posY; // posX,posY en celdas
 
 // Colores por forma
-unsigned short shapeColors[NUM_SHAPES] = { COLOR_RED, COLOR_GREEN,
-                                           COLOR_ORANGE, COLOR_BLUE };
-#define BG_COLOR COLOR_BLACK
+unsigned short colors[NUM_SHAPES] = {
+  COLOR_RED, COLOR_GREEN, COLOR_ORANGE, COLOR_BLUE
+};
+#define BG COLOR_BLACK
 
-// Dibuja una forma completa en (col,row)
-static void draw_piece(short col, short row, char idx, unsigned short color) {
-  for (int i = 0; i < 4; i++) {
-    int x = col + shapes[idx][i].x * BLOCK_SIZE;
-    int y = row + shapes[idx][i].y * BLOCK_SIZE;
-    fillRectangle(x, y, BLOCK_SIZE, BLOCK_SIZE, color);
+// Dibuja/reemplaza una celda de la grilla (x,y) con color c
+static void draw_cell(int cx, int cy, unsigned short c) {
+  fillRectangle(cx*BLOCK_SIZE, cy*BLOCK_SIZE,
+                BLOCK_SIZE, BLOCK_SIZE, c);
+  grid[cx][cy] = c;
+}
+
+// Dibuja la pieza móvil sin limpiar todo el LCD
+static void update_piece(void) {
+  static int last[4][2] = {{-1,-1}};
+  int idx = shapeI;
+  int cur[4][2];
+  // calcular celdas actuales
+  for(int i=0;i<4;i++) {
+    cur[i][0] = posX + shapes[idx][i].x;
+    cur[i][1] = posY + shapes[idx][i].y;
+  }
+  // borrar antiguas: restaurar color de grid
+  for(int i=0;i<4;i++) {
+    int lx = last[i][0], ly = last[i][1];
+    if(lx>=0 && lx<COLS && ly>=0 && ly<ROWS)
+      draw_cell(lx, ly, grid[lx][ly]);
+  }
+  // dibujar nuevas sobre grid
+  for(int i=0;i<4;i++) {
+    int cx = cur[i][0], cy = cur[i][1];
+    if(cx>=0 && cx<COLS && cy>=0 && cy<ROWS)
+      draw_cell(cx, cy, colors[idx]);
+  }
+  // guardar
+  for(int i=0;i<4;i++) {
+    last[i][0] = cur[i][0];
+    last[i][1] = cur[i][1];
   }
 }
 
-// Actualiza sólo la pieza móvil, borrando la anterior
-static void update_moving_shape(void) {
-  static short lastCol = 0, lastRow = 0;
-  static char  lastIdx = -1;
-  // Borrar la forma anterior pintando fondo
-  if (lastIdx >= 0) {
-    draw_piece(lastCol, lastRow, lastIdx, BG_COLOR);
-  }
-  // Dibujar forma actual
-  draw_piece(shapeCol, shapeRow, shapeIndex,
-             shapeColors[shapeIndex]);
-  // Guardar para siguiente iteración
-  lastCol = shapeCol;
-  lastRow = shapeRow;
-  lastIdx = shapeIndex;
-}
-
-// WDT ISR: hace caer la pieza y la apila
+// ISR WDT: hace caer la pieza y la fija al colisionar
 void wdt_c_handler() {
-  static int tick = 0;
-  if (++tick < 64) return;  // controla velocidad (~512Hz/64)
+  static int tick;
+  if(++tick < 64) return;
   tick = 0;
-
-  // Mover pieza hacia abajo
-  shapeRow += BLOCK_SIZE;
-
-  // Detectar colisión con suelo o pieza fija
-  int collided = FALSE;
-  if (shapeRow + BLOCK_SIZE > screenHeight - 1) {
-    collided = TRUE;
-  } else {
-    for (int p = 0; p < placedCount && !collided; p++) {
-      if (shapeCol == placed[p].col &&
-          shapeRow + BLOCK_SIZE == placed[p].row) {
-        collided = TRUE;
+  // mover hacia abajo en celdas
+  posY++;
+    // detectar colisión a nivel de píxeles:
+  // línea de hit en pixel Y = 159, y X entre 0 y 120
+  int hit = FALSE;
+  for(int i=0;i<4;i++){
+    int cx = posX + shapes[shapeI][i].x;
+    int cy = posY + shapes[shapeI][i].y;
+    int pixelY = cy * BLOCK_SIZE;
+    int pixelX = cx * BLOCK_SIZE;
+    // colisión si supera línea inferior o fuera de X permitido
+    if(pixelY >= 159 || pixelX < 0 || pixelX > 120 || grid[cx][cy] != BG) {
+      hit = TRUE; break;
+    }
+  }
+  if(hit) {
+    // retroceder 1 celda
+    posY--;
+    // fijar en grid y dibujar bloque fijo
+    for(int i=0;i<4;i++){
+      int cx = posX + shapes[shapeI][i].x;
+      int cy = posY + shapes[shapeI][i].y;
+      if(cx>=0 && cx<COLS && cy>=0 && cy<ROWS) {
+        grid[cx][cy] = colors[shapeI];
+        fillRectangle(cx*BLOCK_SIZE, cy*BLOCK_SIZE,
+                      BLOCK_SIZE, BLOCK_SIZE,
+                      colors[shapeI]);
       }
     }
+    // generar próxima pieza con spawn limitado a columnas 0..12
+    static int spawn = 0;
+    shapeI = (shapeI+1)%NUM_SHAPES;
+    posX = spawn++ % ((120 / BLOCK_SIZE) + 1);
+    posY = -2;
   }
-
-  if (collided) {
-    // Ajustar posición encima de colisión
-    shapeRow -= BLOCK_SIZE;
-    // Guardar pieza fija y dibujarla
-    if (placedCount < MAX_PLACED) {
-      placed[placedCount++] = (Placed){ shapeCol, shapeRow, shapeIndex };
-      draw_piece(shapeCol, shapeRow, shapeIndex,
-                 shapeColors[shapeIndex]);
-    }
-    // Generar nueva pieza a la derecha
-    shapeIndex = (shapeIndex + 1) % NUM_SHAPES;
-    colIndex   = (colIndex + 1) % numColumns;
-    shapeCol   = colIndex * BLOCK_SIZE;
-    shapeRow   = -BLOCK_SIZE * 4;
+  redrawFlag = TRUE;=0;=0;
+    posX = (spawn++ % COLS);
+    posY = -2; // arriba
   }
-
-  redrawScreen = TRUE;
+  redrawFlag = TRUE;
 }
 
-int main() {
-  // Inicialización hardware
-  P1DIR |= BIT6; P1OUT |= BIT6;  // LED en P1.6
-  configureClocks();
-  lcd_init();
-  clearScreen(BG_COLOR);
-
-  // Columnas disponibles
-  numColumns = screenWidth / BLOCK_SIZE;
-
-  // Pieza inicial
-  shapeIndex = 0;
-  colIndex   = 0;
-  shapeCol   = 0;
-  shapeRow   = -BLOCK_SIZE * 4;
-
-  // Activar WDT e interrupciones
-  enableWDTInterrupts();
-  or_sr(0x8);
-
-  // Bucle principal: solo actualiza pieza móvil
-  while (TRUE) {
-    if (redrawScreen) {
-      redrawScreen = FALSE;
-      update_moving_shape();
+int main(){
+  // inicializar grid
+  for(int x=0;x<COLS;x++)
+    for(int y=0;y<ROWS;y++)
+      grid[x][y]=BG;
+  // hardware
+  P1DIR |= BIT6; P1OUT |= BIT6;
+  configureClocks(); lcd_init(); clearScreen(BG);
+  // estado inicial
+  shapeI = 0; posX = 0; posY = -2;
+  // activar WDT y global
+  enableWDTInterrupts(); or_sr(0x8);
+  // loop principal
+  while(1){
+    if(redrawFlag){
+      redrawFlag = FALSE;
+      update_piece();
     }
-    // CPU OFF entre ISR
-    P1OUT &= ~BIT6;
-    or_sr(0x10);
-    P1OUT |= BIT6;
+    // bajo consumo
+    P1OUT &= ~BIT6; or_sr(0x10); P1OUT |= BIT6;
   }
 }
+
