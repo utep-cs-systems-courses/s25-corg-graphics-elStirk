@@ -40,6 +40,13 @@ static void draw_cell(int cx, int cy, unsigned short color) {
   grid[cx][cy] = color;
 }
 
+// Actualiza sólo la pieza móvil sin limpiar todo el LCD
+static void update_piece(void) {(int cx, int cy, unsigned short color) {
+  fillRectangle(cx*BLOCK_SIZE, cy*BLOCK_SIZE,
+                BLOCK_SIZE, BLOCK_SIZE, color);
+  grid[cx][cy] = color;
+}
+
 // Actualiza sólo la pieza móvil sin limpiar todo el LCD\static void update_piece(void) {
   static int last[4][2] = {{-1,-1}};
   int cur[4][2];
