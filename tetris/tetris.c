@@ -11,7 +11,6 @@
 #define SCREEN_HEIGHT  160
 #define BLOCK_SIZE     10
 
-// 128/10 = 12 columnas, 160/10 = 16 filas
 #define MAX_COLUMNS    (SCREEN_WIDTH  / BLOCK_SIZE)
 #define MAX_ROWS       (SCREEN_HEIGHT / BLOCK_SIZE)
 
@@ -30,25 +29,20 @@ const Offset shapes[][4] = {
 // --------------------------------------------------
 // Variables globales
 // --------------------------------------------------
-// Rejilla de ocupación: 1 = bloque fijo, 0 = vacío
 static char grid[MAX_COLUMNS][MAX_ROWS];
 static const int numColumns = MAX_COLUMNS;
 static const int numRows    = MAX_ROWS;
 
-// Flags para refresco y para no borrar pieza fija
 enum { FALSE = 0, TRUE = 1 };
 volatile int redrawScreen     = TRUE;
 volatile int pieceStoppedFlag = FALSE;
 
-// Estado de la pieza móvil
 static short shapeCol, shapeRow;
 static char  shapeIndex = 0, colIndex = 0;
 
-// Para borrado selectivo de la pieza móvil
 static short lastCol = 0, lastRow = 0;
 static char  lastIdx = -1;
 
-// Colores por forma
 unsigned short shapeColors[NUM_SHAPES] = {
   COLOR_RED, COLOR_GREEN, COLOR_ORANGE, COLOR_BLUE
 };
@@ -60,30 +54,47 @@ unsigned short shapeColors[NUM_SHAPES] = {
 #define SWITCHES       15    /* P2 bits 0-3: SW1-SW4 */
 volatile int switches = 0;
 
-static char
-switch_update_interrupt_sense()
-{
+static char switch_update_interrupt_sense() {
   char p2val = P2IN;
-  P2IES |= (p2val & SWITCHES);   /* sense falling edge */
-  P2IES &= (p2val | ~SWITCHES);  /* sense rising edge */
+  P2IES |= (p2val & SWITCHES);
+  P2IES &= (p2val | ~SWITCHES);
   return p2val;
 }
 
-void switch_init()
-{
-  P2REN |= SWITCHES;    /* habilita resistencias */
-  P2IE  |= SWITCHES;    /* habilita interrupciones */
-  P2OUT |= SWITCHES;    /* pull-ups */
-  P2DIR &= ~SWITCHES;   /* inputs */
+void switch_init() {
+  P2REN |= SWITCHES;
+  P2IE  |= SWITCHES;
+  P2OUT |= SWITCHES;
+  P2DIR &= ~SWITCHES;
   switch_update_interrupt_sense();
 }
 
-void switch_interrupt_handler()
-{
+void switch_interrupt_handler() {
   char p2val = switch_update_interrupt_sense();
   switches = ~p2val & SWITCHES;
 
-  /* Si SW4 (bit 3) está pulsado: reiniciar juego */
+  /* SW1: mover pieza a la derecha */
+  if (switches & (1<<0)) {
+    short newCol = shapeCol + BLOCK_SIZE;
+    int canMove = TRUE;
+    for (int i = 0; i < 4; i++) {
+      int x = newCol + shapes[shapeIndex][i].x * BLOCK_SIZE;
+      int c = x / BLOCK_SIZE;
+      int y = shapeRow + shapes[shapeIndex][i].y * BLOCK_SIZE;
+      int r = y / BLOCK_SIZE;
+      if (c >= numColumns || (r >= 0 && grid[c][r])) {
+        canMove = FALSE;
+        break;
+      }
+    }
+    if (canMove) {
+      shapeCol = newCol;
+      colIndex = shapeCol / BLOCK_SIZE;
+      redrawScreen = TRUE;
+    }
+  }
+
+  /* SW4: reiniciar juego */
   if (switches & (1<<3)) {
     clearScreen(BG_COLOR);
     memset(grid, 0, sizeof grid);
@@ -95,18 +106,13 @@ void switch_interrupt_handler()
   }
 }
 
-// Vector de interrupción de botones
-void __interrupt_vec(PORT2_VECTOR) Port_2()
-{
+void __interrupt_vec(PORT2_VECTOR) Port_2() {
   if (P2IFG & SWITCHES) {
     P2IFG &= ~SWITCHES;
     switch_interrupt_handler();
   }
 }
 
-// --------------------------------------------------
-// Dibuja una pieza en (col,row) con el color indicado
-// --------------------------------------------------
 static void draw_piece(short col, short row, char idx, unsigned short color) {
   for (int i = 0; i < 4; i++) {
     int x = col + shapes[idx][i].x * BLOCK_SIZE;
@@ -115,9 +121,6 @@ static void draw_piece(short col, short row, char idx, unsigned short color) {
   }
 }
 
-// --------------------------------------------------
-// Refresca sólo la pieza móvil, borrando la anterior
-// --------------------------------------------------
 static void update_moving_shape(void) {
   if (lastIdx >= 0 && !pieceStoppedFlag) {
     draw_piece(lastCol, lastRow, lastIdx, BG_COLOR);
@@ -129,10 +132,6 @@ static void update_moving_shape(void) {
   pieceStoppedFlag = FALSE;
 }
 
-// --------------------------------------------------
-// ISR del Watchdog: mueve pieza, comprueba colisión,
-// gestiona apilamiento y reinicio por Game Over
-// --------------------------------------------------
 void wdt_c_handler() {
   static int tick = 0;
   if (++tick < 64) return;
@@ -155,7 +154,6 @@ void wdt_c_handler() {
     shapeRow = newRow;
   } else {
     if (shapeRow < 0) {
-      /* Game Over: reinicio automático */
       clearScreen(BG_COLOR);
       memset(grid, 0, sizeof grid);
       shapeIndex = 0;
@@ -182,28 +180,20 @@ void wdt_c_handler() {
   redrawScreen = TRUE;
 }
 
-// --------------------------------------------------
-// main()
-// --------------------------------------------------
 int main() {
   P1DIR |= BIT6; P1OUT |= BIT6;
   configureClocks();
   lcd_init();
   clearScreen(BG_COLOR);
 
-  /* Inicialización de botones */
   switch_init();
-
-  /* Vaciamos rejilla */
   memset(grid, 0, sizeof grid);
 
-  /* Estado inicial de la pieza móvil */
   shapeIndex = 0;
   colIndex   = 0;
   shapeCol   = 0;
   shapeRow   = -BLOCK_SIZE * 4;
 
-  /* Interrupciones */
   enableWDTInterrupts();
   or_sr(0x8);
 
