@@ -202,19 +202,14 @@ void switch_interrupt_handler() {
   }
 
   // SW4: mover derecha
-  if (switches & (1<<3)) {
-    short newCol = shapeCol + BLOCK_SIZE;
-    int canMove = TRUE;
-    for (int i = 0; i < 4; i++) {
-      int ox = shapes[shapeIndex][i].x, oy = shapes[shapeIndex][i].y;
-      int rx = (shapeRotation==1? -oy : shapeRotation==2? -ox: shapeRotation==3?oy:ox);
-      int ry = (shapeRotation==1? ox : shapeRotation==2? -oy: shapeRotation==3?-ox:oy);
-      int c = (newCol + rx*BLOCK_SIZE)/BLOCK_SIZE;
-      int r = (shapeRow + ry*BLOCK_SIZE)/BLOCK_SIZE;
-      if (c>=numColumns || (r>=0 && grid[c][r]>=0)) { canMove=FALSE; break; }
-    }
-    if (canMove) shapeCol = newCol;
-  }
+  if (switches & (1<<2)) {
+  clearScreen(BG_COLOR);
+  memset(grid, -1, sizeof grid);
+  shapeIndex = simple_rand(NUM_SHAPES);
+  shapeRotation = 0;
+  shapeCol = ((numColumns / 2) - 1) * BLOCK_SIZE; // <-- Corrige aquí
+  shapeRow = -BLOCK_SIZE * 4;
+}
 
   redrawScreen = TRUE;
   // Rehabilitar interrupción
