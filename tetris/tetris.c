@@ -13,8 +13,8 @@
 
 #define MAX_COLUMNS    (SCREEN_WIDTH  / BLOCK_SIZE)
 #define MAX_ROWS       (SCREEN_HEIGHT / BLOCK_SIZE)
-// Nueva posición de spawneo: 10 píxeles debajo del borde superior
-#define SPAWN_START_Y  (10)
+// Spawn a 10 píxeles debajo del borde superior
+#define SPAWN_START_Y   (10)
 
 // --------------------------------------------------
 // Formas Tetris
@@ -175,49 +175,77 @@ void switch_interrupt_handler(void) {
   if (switches & (1<<0)) {
     short newCol = shapeCol - BLOCK_SIZE;
     int ok = TRUE;
-    for (int i=0; i<4; i++) {
-      int ox = shapes[shapeIndex][i].x, oy = shapes[shapeIndex][i].y;
-      int rx = (shapeRotation==1? -oy: shapeRotation==2? -ox: shapeRotation==3? oy: ox);
-      int ry = (shapeRotation==1? ox: shapeRotation==2? -oy: shapeRotation==3? -ox: oy);
-      int c = (newCol + rx*BLOCK_SIZE) / BLOCK_SIZE;
-      int r = (shapeRow + ry*BLOCK_SIZE) / BLOCK_SIZE;
-      if (c < 0 || (r >= 0 && grid[c][r] >= 0)) { ok = FALSE; break; }
+    for (int i = 0; i < 4; i++) {
+      int ox = shapes[shapeIndex][i].x;
+      int oy = shapes[shapeIndex][i].y;
+      int rx = (shapeRotation==1? -oy : shapeRotation==2? -ox : shapeRotation==3? oy : ox);
+      int ry = (shapeRotation==1? ox : shapeRotation==2? -oy : shapeRotation==3? -ox : oy);
+      int px = newCol + rx*BLOCK_SIZE;
+      int py = shapeRow + ry*BLOCK_SIZE;
+      // pared izquierda
+      if (px < 0) { ok = FALSE; break; }
+      // colisión con piezas
+      if (py >= 0) {
+        int c = px / BLOCK_SIZE;
+        int r = py / BLOCK_SIZE;
+        if (c >= 0 && c < numColumns && r < numRows && grid[c][r] >= 0) { ok = FALSE; break; }
+      }
     }
     if (ok) shapeCol = newCol;
   }
+
   // SW2: rotar
   if (switches & (1<<1)) {
     char newRot = (shapeRotation + 1) % 4;
     int ok = TRUE;
     for (int i = 0; i < 4; i++) {
-      int ox = shapes[shapeIndex][i].x, oy = shapes[shapeIndex][i].y;
-      int rx = (newRot==1? -oy: newRot==2? -ox: newRot==3? oy: ox);
-      int ry = (newRot==1? ox: newRot==2? -oy: newRot==3? -ox: oy);
-      int c = (shapeCol + rx*BLOCK_SIZE) / BLOCK_SIZE;
-      int r = (shapeRow + ry*BLOCK_SIZE) / BLOCK_SIZE;
-      if (c<0 || c>=numColumns || r>=numRows || (r>=0 && grid[c][r]>=0)) { ok=FALSE; break; }
+      int ox = shapes[shapeIndex][i].x;
+      int oy = shapes[shapeIndex][i].y;
+      int rx = (newRot==1? -oy : newRot==2? -ox : newRot==3? oy : ox);
+      int ry = (newRot==1? ox : newRot==2? -oy : newRot==3? -ox : oy);
+      int px = shapeCol + rx*BLOCK_SIZE;
+      int py = shapeRow + ry*BLOCK_SIZE;
+      // pared
+      if (px < 0 || px + BLOCK_SIZE > SCREEN_WIDTH) { ok = FALSE; break; }
+      // colisión con piezas
+      if (py >= 0) {
+        int c = px / BLOCK_SIZE;
+        int r = py / BLOCK_SIZE;
+        if (c >= 0 && c < numColumns && r < numRows && grid[c][r] >= 0) { ok = FALSE; break; }
+      }
     }
     if (ok) shapeRotation = newRot;
   }
+
   // SW3: reiniciar manual
   if (switches & (1<<2)) {
     clearScreen(BG_COLOR);
     memset(grid, -1, sizeof grid);
     shapeIndex = shapeRotation = colIndex = 0;
-    shapeCol = 0; shapeRow = SPAWN_START_Y;
+    shapeCol = 0;
+    shapeRow = SPAWN_START_Y;
     draw_score_label();
   }
+
   // SW4: mover derecha
   if (switches & (1<<3)) {
     short newCol = shapeCol + BLOCK_SIZE;
     int ok = TRUE;
-    for (int i=0; i<4; i++) {
-      int ox = shapes[shapeIndex][i].x, oy = shapes[shapeIndex][i].y;
-      int rx = (shapeRotation==1? -oy: shapeRotation==2? -ox: shapeRotation==3? oy: ox);
-      int ry = (shapeRotation==1? ox: shapeRotation==2? -oy: shapeRotation==3? -ox: oy);
-      int c = (newCol + rx*BLOCK_SIZE) / BLOCK_SIZE;
-      int r = (shapeRow + ry*BLOCK_SIZE) / BLOCK_SIZE;
-      if (c>=numColumns || (r>=0 && grid[c][r]>=0)) { ok = FALSE; break; }
+    for (int i = 0; i < 4; i++) {
+      int ox = shapes[shapeIndex][i].x;
+      int oy = shapes[shapeIndex][i].y;
+      int rx = (shapeRotation==1? -oy : shapeRotation==2? -ox : shapeRotation==3? oy : ox);
+      int ry = (shapeRotation==1? ox : shapeRotation==2? -oy : shapeRotation==3? -ox : oy);
+      int px = newCol + rx*BLOCK_SIZE;
+      int py = shapeRow + ry*BLOCK_SIZE;
+      // pared derecha
+      if (px + BLOCK_SIZE > SCREEN_WIDTH) { ok = FALSE; break; }
+      // colisión con piezas
+      if (py >= 0) {
+        int c = px / BLOCK_SIZE;
+        int r = py / BLOCK_SIZE;
+        if (c >= 0 && c < numColumns && r < numRows && grid[c][r] >= 0) { ok = FALSE; break; }
+      }
     }
     if (ok) shapeCol = newCol;
   }
@@ -240,13 +268,21 @@ void wdt_c_handler(void) {
   tick = 0;
   short newRow = shapeRow + BLOCK_SIZE;
   int collided = FALSE;
-  for (int i=0; i<4; i++) {
-    int ox = shapes[shapeIndex][i].x, oy = shapes[shapeIndex][i].y;
-    int rx = (shapeRotation==1? -oy: shapeRotation==2? -ox: shapeRotation==3? oy: ox);
-    int ry = (shapeRotation==1? ox: shapeRotation==2? -oy: shapeRotation==3? -ox: oy);
-    int c = (shapeCol + rx*BLOCK_SIZE) / BLOCK_SIZE;
-    int r = (newRow + ry*BLOCK_SIZE) / BLOCK_SIZE;
-    if (r>=numRows || (r>=0 && grid[c][r]>=0)) { collided = TRUE; break; }
+  for (int i = 0; i < 4; i++) {
+    int ox = shapes[shapeIndex][i].x;
+    int oy = shapes[shapeIndex][i].y;
+    int rx = (shapeRotation==1? -oy : shapeRotation==2? -ox : shapeRotation==3? oy : ox);
+    int ry = (shapeRotation==1? ox : shapeRotation==2? -oy : shapeRotation==3? -ox : oy);
+    int px = shapeCol + rx*BLOCK_SIZE;
+    int py = newRow + ry*BLOCK_SIZE;
+    // pared
+    if (px < 0 || px + BLOCK_SIZE > SCREEN_WIDTH || py + BLOCK_SIZE > SCREEN_HEIGHT) { collided = TRUE; break; }
+    // colisión con piezas
+    if (py >= 0) {
+      int c = px / BLOCK_SIZE;
+      int r = py / BLOCK_SIZE;
+      if (c >= 0 && c < numColumns && r < numRows && grid[c][r] >= 0) { collided = TRUE; break; }
+    }
   }
   if (!collided) {
     shapeRow = newRow;
@@ -255,17 +291,21 @@ void wdt_c_handler(void) {
       clearScreen(BG_COLOR);
       memset(grid, -1, sizeof grid);
       shapeIndex = shapeRotation = colIndex = 0;
-      shapeCol = 0; shapeRow = SPAWN_START_Y;
+      shapeCol = 0;
+      shapeRow = SPAWN_START_Y;
       draw_score_label();
       return;
     }
-    for (int i=0; i<4; i++) {
-      int ox = shapes[shapeIndex][i].x, oy = shapes[shapeIndex][i].y;
-      int rx = (shapeRotation==1? -oy: shapeRotation==2? -ox: shapeRotation==3? oy: ox);
-      int ry = (shapeRotation==1? ox: shapeRotation==2? -oy: shapeRotation==3? -ox: oy);
-      int c = (shapeCol + rx*BLOCK_SIZE) / BLOCK_SIZE;
-      int r = (shapeRow + ry*BLOCK_SIZE) / BLOCK_SIZE;
-      if (r>=0 && r<numRows) grid[c][r] = shapeIndex;
+    for (int i = 0; i < 4; i++) {
+      int ox = shapes[shapeIndex][i].x;
+      int oy = shapes[shapeIndex][i].y;
+      int rx = (shapeRotation==1? -oy : shapeRotation==2? -ox : shapeRotation==3? oy : ox);
+      int ry = (shapeRotation==1? ox : shapeRotation==2? -oy : shapeRotation==3? -ox : oy);
+      int px = shapeCol + rx*BLOCK_SIZE;
+      int py = shapeRow + ry*BLOCK_SIZE;
+      int c = px / BLOCK_SIZE;
+      int r = py / BLOCK_SIZE;
+      if (r >= 0 && r < numRows) grid[c][r] = shapeIndex;
     }
     draw_grid();
     clear_full_rows();
