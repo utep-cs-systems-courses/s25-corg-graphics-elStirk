@@ -7,8 +7,8 @@
 enum { BLOCK_SIZE = 10 };
 
 // Dimensiones de la grilla en celdas
-enum { COLS = screenWidth / BLOCK_SIZE,   // 160/10 = 16 columnas
-       ROWS = screenHeight / BLOCK_SIZE }; // 128/10 = 12 filas
+enum { COLS = screenWidth / BLOCK_SIZE,                // 160/10 = 16 columnas
+       ROWS = (screenHeight + BLOCK_SIZE - 1) / BLOCK_SIZE }; // ceil(128/10) = 13 filas, cubre hasta Y=127 // 128/10 = 12 filas
 
 // Buffer de pantalla: color de cada celda
 static unsigned short grid[COLS][ROWS];
@@ -30,7 +30,7 @@ static const unsigned short colors[NUM_SHAPES] = {
 #define BG_COLOR COLOR_BLACK
 
 // Estado de la pieza en caída (indice + coordenadas en celdas)
-volatile int redrawScreen;
+static volatile int redrawScreen;
 static int shapeI, posX, posY;
 
 // Función: dibuja y actualiza valor en grid
@@ -152,3 +152,4 @@ int main(void) {
     P1OUT |= BIT6;
   }
 }
+
