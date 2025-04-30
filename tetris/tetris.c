@@ -3,7 +3,12 @@
 #include <string.h>
 #include "lcdutils.h"
 #include "lcddraw.h"
-#include "buzzer.h"
+// Buzzer driver integrated
+define BUZZER BIT6
+
+static void buzzer_init(void);
+static void buzzer_set_period(short cycles);
+
 
 // --------------------------------------------------
 // Configuración de pantalla y rejilla
