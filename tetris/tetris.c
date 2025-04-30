@@ -27,7 +27,7 @@ static int placedCount = 0;
 
 // Estado de la pieza en caída
 enum { FALSE = 0, TRUE = 1 };
-volatile int redrawScreen = TRUE;
+static volatile int redrawScreen = TRUE;
 static short shapeCol, shapeRow;
 static char shapeIndex, colIndex;
 
@@ -50,12 +50,40 @@ static void draw_piece(short col, short row, char idx, unsigned short color) {
 // Actualiza solo la pieza en movimiento sin limpiar toda la pantalla
 static void update_moving_shape(void) {
   static short lastCol = 0, lastRow = 0;
-  static char lastIdx = -1;
-  // Borrar la forma anterior pintando fondo en su posición
+  static char  lastIdx = -1;
+  // Borrar bloques de la forma anterior, restaurando bloques fijos si existen
   if (lastIdx >= 0) {
-    draw_piece(lastCol, lastRow, lastIdx, BG_COLOR);
+    for (int i = 0; i < 4; i++) {
+      int bx = lastCol + shapes[lastIdx][i].x * BLOCK_SIZE;
+      int by = lastRow + shapes[lastIdx][i].y * BLOCK_SIZE;
+      int blkColor = BG_COLOR;
+      // Verificar si aquí hay un bloque fijo
+      for (int p = 0; p < placedCount; p++) {
+        for (int j = 0; j < 4; j++) {
+          int px = placed[p].col + shapes[placed[p].idx][j].x * BLOCK_SIZE;
+          int py = placed[p].row + shapes[placed[p].idx][j].y * BLOCK_SIZE;
+          if (px == bx && py == by) {
+            blkColor = shapeColors[placed[p].idx];
+            break;
+          }
+        }
+        if (blkColor != BG_COLOR) break;
+      }
+      fillRectangle(bx, by, BLOCK_SIZE, BLOCK_SIZE, blkColor);
+    }
   }
   // Dibujar la forma actual
+  for (int i = 0; i < 4; i++) {
+    int bx = shapeCol + shapes[shapeIndex][i].x * BLOCK_SIZE;
+    int by = shapeRow + shapes[shapeIndex][i].y * BLOCK_SIZE;
+    fillRectangle(bx, by, BLOCK_SIZE, BLOCK_SIZE, shapeColors[shapeIndex]);
+  }
+  // Guardar para la siguiente iteración
+  lastCol = shapeCol;
+  lastRow = shapeRow;
+  lastIdx = shapeIndex;
+}
+// Dibujar la forma actual
   draw_piece(shapeCol, shapeRow, shapeIndex, shapeColors[shapeIndex]);
   // Guardar para la siguiente iteración
   lastCol = shapeCol;
