@@ -20,8 +20,8 @@
 // --------------------------------------------------
 typedef struct { short x, y; } Offset;
 const Offset shapes[][4] = {
-  {{0,0},{1,0},{0,1},{1,1}},  // Cuadrado
-  {{0,0},{1,0},{2,0},{3,0}},  // Línea
+  {{0,0},{1,0},{0,1},{1,1}},  // cuadrado
+  {{0,0},{1,0},{2,0},{3,0}},  // línea
   {{0,0},{0,1},{1,1},{2,1}},  // L invertida
   {{1,0},{0,1},{1,1},{2,1}}   // T
 };
@@ -88,33 +88,34 @@ void wdt_c_handler() {
   if (++tick < 64) return;   // ralentiza (~512 Hz / 64)
   tick = 0;
 
-  // Desplaza la pieza hacia abajo
-  shapeRow += BLOCK_SIZE;
+  // 1) calculamos la nueva posición vertical potencial
+  short newRow = shapeRow + BLOCK_SIZE;
 
-  // Comprueba colisión bloque a bloque
+  // 2) comprobamos bloque a bloque si choca al bajar
   int collided = FALSE;
   for (int i = 0; i < 4; i++) {
     int x = shapeCol + shapes[shapeIndex][i].x * BLOCK_SIZE;
-    int y = shapeRow + BLOCK_SIZE + shapes[shapeIndex][i].y * BLOCK_SIZE;
-    int colBlock = x / BLOCK_SIZE;
-    int rowBlock = y / BLOCK_SIZE;
-
-    // Colisión con suelo
-    if (rowBlock >= numRows) {
+    int y = newRow  + shapes[shapeIndex][i].y * BLOCK_SIZE;
+    int c = x / BLOCK_SIZE;
+    int r = y / BLOCK_SIZE;
+    // colisión con suelo
+    if (r >= numRows) {
       collided = TRUE;
       break;
     }
-    // Colisión con bloque fijo (solo si está dentro de la rejilla)
-    if (rowBlock >= 0 && grid[colBlock][rowBlock]) {
+    // colisión con bloque fijo (solo si está dentro)
+    if (r >= 0 && grid[c][r]) {
       collided = TRUE;
       break;
     }
   }
 
-  if (collided) {
-    // Si colisiona antes de entrar en pantalla → Game Over
+  if (!collided) {
+    // no colisiona → aplicamos el movimiento
+    shapeRow = newRow;
+  } else {
+    // colisiona antes de entrar → reinicio completo (Game Over)
     if (shapeRow < 0) {
-      // Reinicia todo
       clearScreen(BG_COLOR);
       memset(grid, 0, sizeof grid);
       shapeIndex = 0;
@@ -122,33 +123,29 @@ void wdt_c_handler() {
       shapeCol   = 0;
       shapeRow   = -BLOCK_SIZE * 4;
       redrawScreen = TRUE;
-      return;  // sale del handler sin dibujar pieza fija
+      return;
     }
-
-    // Retrocede un paso
-    shapeRow -= BLOCK_SIZE;
-    // Marca en grid los 4 bloques de la pieza fija
+    // choca ya dentro de pantalla → fijar en la posición actual
     for (int i = 0; i < 4; i++) {
       int x = shapeCol + shapes[shapeIndex][i].x * BLOCK_SIZE;
       int y = shapeRow + shapes[shapeIndex][i].y * BLOCK_SIZE;
-      int colBlock = x / BLOCK_SIZE;
-      int rowBlock = y / BLOCK_SIZE;
-      if (rowBlock >= 0 && rowBlock < numRows) {
-        grid[colBlock][rowBlock] = 1;
+      int c = x / BLOCK_SIZE;
+      int r = y / BLOCK_SIZE;
+      if (r >= 0 && r < numRows) {
+        grid[c][r] = 1;
       }
     }
-    // Dibuja la pieza fija en pantalla
+    // dibujamos la pieza fija
     draw_piece(shapeCol, shapeRow, shapeIndex, shapeColors[shapeIndex]);
     pieceStoppedFlag = TRUE;
 
-    // Genera la siguiente pieza
+    // preparamos la siguiente pieza
     shapeIndex = (shapeIndex + 1) % NUM_SHAPES;
-    colIndex   = (colIndex + 1) % numColumns;
+    colIndex   = (colIndex   + 1) % numColumns;
     shapeCol   = colIndex * BLOCK_SIZE;
     shapeRow   = -BLOCK_SIZE * 4;
   }
 
-  // Señal para el bucle principal
   redrawScreen = TRUE;
 }
 
@@ -156,34 +153,35 @@ void wdt_c_handler() {
 // main()
 // --------------------------------------------------
 int main() {
-  // Inicialización hardware
+  // inicialización hardware
   P1DIR |= BIT6; P1OUT |= BIT6;   // LED en P1.6
   configureClocks();
   lcd_init();
   clearScreen(BG_COLOR);
 
-  // Limpia rejilla
+  // vaciamos rejilla
   memset(grid, 0, sizeof grid);
 
-  // Estado inicial de la pieza móvil
+  // estado inicial de la pieza móvil
   shapeIndex = 0;
   colIndex   = 0;
   shapeCol   = 0;
   shapeRow   = -BLOCK_SIZE * 4;
 
-  // Activa WDT e interrupciones
+  // activamos WDT e interrupciones
   enableWDTInterrupts();
   or_sr(0x8);
 
-  // Bucle principal: solo actualiza pieza móvil
+  // bucle principal: pinta sólo la pieza móvil
   while (TRUE) {
     if (redrawScreen) {
       redrawScreen = FALSE;
       update_moving_shape();
     }
-    // Apaga CPU hasta la próxima ISR
+    // modo bajo consumo hasta la próxima ISR
     P1OUT &= ~BIT6;
     or_sr(0x10);
     P1OUT |= BIT6;
   }
 }
+
