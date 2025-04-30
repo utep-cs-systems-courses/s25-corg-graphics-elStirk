@@ -204,7 +204,7 @@ void switch_interrupt_handler(void) {
     clearScreen(BG_COLOR);
     memset(grid, -1, sizeof grid);
     shapeIndex=shapeRotation=colIndex=0;
-    shapeCol=0; shapeRow=-BLOCK_SIZE*4;
+    shapeCol=0; shapeRow=-BLOCK_SIZE*4 + 10;  // <— spawn 10px más abajo
     draw_score_label();
   }
   // SW4: mover derecha
@@ -253,14 +253,16 @@ void wdt_c_handler(void) {
   if (!collided) {
     shapeRow = newRow;
   } else {
+    // Si colisiona antes de aparecer, reinicia partida
     if (shapeRow < 0) {
       clearScreen(BG_COLOR);
       memset(grid,-1,sizeof grid);
       shapeIndex=shapeRotation=colIndex=0;
-      shapeCol=0; shapeRow=-BLOCK_SIZE*4;
+      shapeCol=0; shapeRow=-BLOCK_SIZE*4 + 10;  // <— spawn 10px más abajo
       draw_score_label();
       return;
     }
+    // Fija la pieza en la rejilla
     for (int i=0;i<4;i++){
       int ox=shapes[shapeIndex][i].x;
       int oy=shapes[shapeIndex][i].y;
@@ -277,7 +279,7 @@ void wdt_c_handler(void) {
     shapeRotation=0;
     colIndex=(colIndex+1)%numColumns;
     shapeCol=colIndex*BLOCK_SIZE;
-    shapeRow=-BLOCK_SIZE*4;
+    shapeRow=-BLOCK_SIZE*4 + 10;  // <— spawn 10px más abajo
   }
   redrawScreen=TRUE;
 }
@@ -292,7 +294,7 @@ int main(void) {
   draw_score_label();
   switch_init(); memset(grid,-1,sizeof grid);
   shapeIndex=shapeRotation=colIndex=0;
-  shapeCol=0; shapeRow=-BLOCK_SIZE*4;
+  shapeCol=0; shapeRow=-BLOCK_SIZE*4 + 10;  // <— spawn 10px más abajo
   enableWDTInterrupts(); or_sr(0x8);
   while(TRUE) {
     if(redrawScreen) { redrawScreen=FALSE; update_moving_shape(); }
