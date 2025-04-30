@@ -3,8 +3,8 @@
 #include "lcdutils.h"
 #include "lcddraw.h"
 
-// Tamaño de cada bloque (en píxeles)
-#define BLOCK_SIZE 10
+// Tamaño de cada bloque (en píxeles) (ahora más pequeño)
+#define BLOCK_SIZE 5
 
 // Definición de formas Tetris (4 bloques cada una)
 typedef struct { short x, y; } Offset;
@@ -16,12 +16,18 @@ const Offset shapes[][4] = {
 };
 #define NUM_SHAPES (sizeof(shapes)/sizeof(shapes[0]))
 
-// Posiciones horizontales predefinidas para que las piezas caigan en distintas columnas
-static short colPositions[5];
+// Columnas posibles de aparición
 #define NUM_COLUMNS 5
+static short colPositions[NUM_COLUMNS];
 
-// Variables de estado compartidas
-volatile int redrawScreen = 1;
+// Registro de piezas colocadas para stacking
+#define MAX_PLACED 100
+typedef struct { short col, row; char idx; } Placed;
+static Placed placed[MAX_PLACED];
+static int placedCount = 0;
+
+// Estado de la pieza en caída
+static volatile int redrawScreen = 1;
 static short shapeCol, shapeRow;
 static char shapeIndex = 0, colIndex = 0;
 
@@ -35,52 +41,65 @@ unsigned short shapeColors[NUM_SHAPES] = {
 
 #define BG_COLOR COLOR_BLACK
 
-// Borra la forma anterior y dibuja la nueva en (shapeCol, shapeRow)
-void update_shape() {
-  static short lastCol = -1, lastRow = -1;
-  static char  lastShape = -1;
-
-  // Leer variables atómicamente
-  and_sr(~8);
-  short col = shapeCol;
-  short row = shapeRow;
-  char  idx = shapeIndex;
-  or_sr(8);
-
-  // Si no cambió nada, no repintar
-  if (col == lastCol && row == lastRow && idx == lastShape) return;
-
-  // Borrar área de la forma anterior
-  if (lastRow >= 0) {
-    fillRectangle(lastCol, lastRow,
-                  BLOCK_SIZE * 4, BLOCK_SIZE * 4,
-                  BG_COLOR);
+// Dibuja todo: piezas apiladas y pieza en movimiento
+void draw_all() {
+  clearScreen(BG_COLOR);
+  // Dibujar piezas colocadas
+  for (int p = 0; p < placedCount; p++) {
+    Placed *pc = &placed[p];
+    for (int i = 0; i < 4; i++) {
+      int x = pc->col + shapes[pc->idx][i].x * BLOCK_SIZE;
+      int y = pc->row + shapes[pc->idx][i].y * BLOCK_SIZE;
+      fillRectangle(x, y, BLOCK_SIZE, BLOCK_SIZE,
+                    shapeColors[pc->idx]);
+    }
   }
-
-  // Dibujar nueva forma bloque por bloque
+  // Dibujar pieza en caída
   for (int i = 0; i < 4; i++) {
-    int x = col + shapes[idx][i].x * BLOCK_SIZE;
-    int y = row + shapes[idx][i].y * BLOCK_SIZE;
+    int x = shapeCol + shapes[shapeIndex][i].x * BLOCK_SIZE;
+    int y = shapeRow + shapes[shapeIndex][i].y * BLOCK_SIZE;
     fillRectangle(x, y, BLOCK_SIZE, BLOCK_SIZE,
-                  shapeColors[idx]);
+                  shapeColors[shapeIndex]);
   }
-
-  lastCol   = col;
-  lastRow   = row;
-  lastShape = idx;
 }
 
-// Watchdog Timer Handler: mueve la pieza verticalmente (hacia abajo)
+// Watchdog Timer Handler: mueve la pieza hacia abajo y detecta colisión con "suelo"
 void wdt_c_handler() {
   static int tick = 0;
-  if (++tick < 64) return;  // control de velocidad (~512 Hz / 64)
+  if (++tick < 64) return;  // ajuste de velocidad
   tick = 0;
 
-  // Hacer caer la pieza
+  // Mover pieza
   shapeRow += BLOCK_SIZE;
 
-  // Si sobrepasa la pantalla, generar nueva pieza arriba
-  if (shapeRow > screenHeight) {
+  // Detectar colisión: suelo o tope de otra pieza
+  int collided = 0;
+  if (shapeRow + BLOCK_SIZE >= screenHeight) {
+    collided = 1;
+  } else {
+    // Verificar contra cada pieza colocada
+    for (int p = 0; p < placedCount; p++) {
+      for (int i = 0; i < 4; i++) {
+        int x = shapeCol + shapes[shapeIndex][i].x * BLOCK_SIZE;
+        int y = shapeRow + shapes[shapeIndex][i].y * BLOCK_SIZE;
+        if (y + BLOCK_SIZE > placed[p].row &&
+            x == placed[p].col + shapes[placed[p].idx][i].x * BLOCK_SIZE) {
+          collided = 1;
+          break;
+        }
+      }
+      if (collided) break;
+    }
+  }
+
+  if (collided) {
+    // Ajustar posición final justo arriba
+    shapeRow -= BLOCK_SIZE;
+    // Guardar pieza en el arreglo de colocadas
+    if (placedCount < MAX_PLACED) {
+      placed[placedCount++] = (Placed){ shapeCol, shapeRow, shapeIndex };
+    }
+    // Generar nueva pieza
     shapeIndex = (shapeIndex + 1) % NUM_SHAPES;
     colIndex   = (colIndex   + 1) % NUM_COLUMNS;
     shapeCol   = colPositions[colIndex];
@@ -90,13 +109,13 @@ void wdt_c_handler() {
 }
 
 int main() {
-  // Configuración inicial
-  P1DIR |= BIT6;  P1OUT |= BIT6;  // LED en P1.6 indica actividad
+  // Inicialización básica
+  P1DIR |= BIT6;  P1OUT |= BIT6;      // LED en P1.6 indica actividad
   configureClocks();
   lcd_init();
   clearScreen(BG_COLOR);
 
-  // Definir columnas de aparición de piezas
+  // Columnas de aparición de piezas
   colPositions[0] = 10;
   colPositions[1] = screenWidth / 4;
   colPositions[2] = screenWidth / 2;
@@ -115,9 +134,9 @@ int main() {
   while (1) {
     if (redrawScreen) {
       redrawScreen = 0;
-      update_shape();
+      draw_all();
     }
-    // Sleep corto hasta próxima interrupción
+    // Bajo consumo hasta próxima interrupción
     P1OUT &= ~BIT6;
     or_sr(0x10);
     P1OUT |= BIT6;
