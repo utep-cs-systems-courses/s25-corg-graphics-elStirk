@@ -242,8 +242,8 @@ void wdt_c_handler() {
   if (!collided) {
     shapeRow = newRow;
   } else {
-    // Game Over sólo si pieza ni siquiera entra mínimamente
-    if (shapeRow < -BLOCK_SIZE*2) {
+    // Game Over si la pieza colisiona antes de entrar en el área de juego visible
+    if (shapeRow < 0) {
       clearScreen(BG_COLOR);
       memset(grid, -1, sizeof grid);
       shapeIndex = shapeRotation = colIndex = 0;
