@@ -154,7 +154,6 @@ static void update_moving_shape(void) {
   pieceStoppedFlag = FALSE;
 }
 
-
 // --------------------------------------------------
 // Botones con debounce
 // --------------------------------------------------
@@ -319,16 +318,22 @@ void wdt_c_handler(void) {
       int r=(shapeRow+ry*BLOCK_SIZE)/BLOCK_SIZE;
       if(r>=0&&r<numRows) grid[c][r]=shapeIndex;
     }
+    // Dibuja toda la rejilla actualizada
     draw_grid();
+    // Elimina filas completas si las hay
     clear_full_rows();
-    pieceStoppedFlag=TRUE;
-    shapeIndex=(shapeIndex+1)%NUM_SHAPES;
-    shapeRotation=0;
-    colIndex=(colIndex+1)%numColumns;
-    shapeCol=colIndex*BLOCK_SIZE;
-    shapeRow=-BLOCK_SIZE*4;
+    // Marca que la pieza anterior ya se fijó
+    pieceStoppedFlag = TRUE;
+    // Evita que update_moving_shape borre bloques fijos
+    lastIdx = -1;
+    // Prepara la siguiente pieza
+    shapeIndex    = (shapeIndex + 1) % NUM_SHAPES;
+    shapeRotation = 0;
+    colIndex      = (colIndex + 1) % numColumns;
+    shapeCol      = colIndex * BLOCK_SIZE;
+    shapeRow      = -BLOCK_SIZE * 4;
   }
-  redrawScreen=TRUE;
+  redrawScreen = TRUE;
 }
 
 // --------------------------------------------------
