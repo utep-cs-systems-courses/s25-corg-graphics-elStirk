@@ -54,11 +54,6 @@ unsigned short shapeColors[NUM_SHAPES] = {
 #define BG_COLOR      COLOR_BLACK
 
 // --------------------------------------------------
-// Generador de pseudoaleatorios LCG
-// --------------------------------------------------
-static unsigned long randState;
-
-// --------------------------------------------------
 // Contador para pulsación larga en SW2 (~3s)
 // --------------------------------------------------
 static int sw2HoldCount = 0;
@@ -94,7 +89,6 @@ static void itoa_simple(int val, char *buf) {
 // Dibuja el texto "SCORE:" y el valor en la esquina superior izquierda
 // --------------------------------------------------
 static void draw_score_label(void) {
-  // limpia área superior para evitar ghosting
   fillRectangle(0, 0, SCREEN_WIDTH, 8, BG_COLOR);
   char buf[6];
   itoa_simple(score, buf);
@@ -239,14 +233,13 @@ void switch_interrupt_handler(void) {
     if (valid) shapeRotation = newRot;
   }
 
-  // SW3: reiniciar manual con pieza aleatoria
+  // SW3: reiniciar manual (sin random)
   if (switches & (1<<2)) {
     clearScreen(BG_COLOR);
     memset(grid, -1, sizeof grid);
     score = 0;
-    randState = TA0R;
-    shapeIndex    = (randState >> 16) % NUM_SHAPES;
-    colIndex      = (randState >> 8)  % numColumns;
+    shapeIndex    = 0;
+    colIndex      = 0;
     shapeRotation = 0;
     shapeCol      = colIndex * BLOCK_SIZE;
     shapeRow      = -BLOCK_SIZE * 4;
@@ -290,16 +283,15 @@ void wdt_c_handler(void) {
   if (++tick < 64) return;
   tick = 0;
 
-  // Pulsación larga SW2 reinicia con pieza aleatoria
+  // Pulsación larga SW2 reinicia (sin random)
   if (!(P2IN & (1<<1))) {
     sw2HoldCount++;
     if (sw2HoldCount >= 3) {
       clearScreen(BG_COLOR);
       memset(grid, -1, sizeof grid);
       score = 0;
-      randState = randState * 1103515245 + 12345;
-      shapeIndex    = (randState >> 16) % NUM_SHAPES;
-      colIndex      = (randState >> 8)  % numColumns;
+      shapeIndex    = 0;
+      colIndex      = 0;
       shapeRotation = 0;
       shapeCol      = colIndex * BLOCK_SIZE;
       shapeRow      = -BLOCK_SIZE * 4;
@@ -330,9 +322,8 @@ void wdt_c_handler(void) {
       clearScreen(BG_COLOR);
       memset(grid, -1, sizeof grid);
       score = 0;
-      randState = TA0R;
-      shapeIndex    = (randState >> 16) % NUM_SHAPES;
-      colIndex      = (randState >> 8)  % numColumns;
+      shapeIndex    = 0;
+      colIndex      = 0;
       shapeRotation = 0;
       shapeCol      = colIndex * BLOCK_SIZE;
       shapeRow      = -BLOCK_SIZE * 4;
@@ -353,10 +344,9 @@ void wdt_c_handler(void) {
     pieceStoppedFlag = TRUE;
     lastIdx = -1;
 
-    // Nuevo spawn aleatorio
-    randState = randState * 1103515245 + 12345;
-    shapeIndex    = (randState >> 16) % NUM_SHAPES;
-    colIndex      = (randState >> 8)  % numColumns;
+    // Nuevo spawn secuencial sin random
+    shapeIndex    = (shapeIndex + 1) % NUM_SHAPES;
+    colIndex      = (colIndex + 1) % numColumns;
     shapeRotation = 0;
     shapeCol      = colIndex * BLOCK_SIZE;
     shapeRow      = -BLOCK_SIZE * 4;
@@ -377,19 +367,18 @@ int main(void) {
   score = 0;
   draw_score_label();
 
-  // Spawn inicial aleatorio
-  randState      = TA0R;
-  shapeIndex     = (randState >> 16) % NUM_SHAPES;
-  colIndex       = (randState >> 8)  % numColumns;
-  shapeRotation  = 0;
-  shapeCol       = colIndex * BLOCK_SIZE;
-  shapeRow       = -BLOCK_SIZE * 4;
+  // Spawn inicial determinista (sin random)
+  shapeIndex    = 0;
+  colIndex      = 0;
+  shapeRotation = 0;
+  shapeCol      = colIndex * BLOCK_SIZE;
+  shapeRow      = -BLOCK_SIZE * 4;
 
   switch_init();
   memset(grid, -1, sizeof grid);
-
   enableWDTInterrupts();
   or_sr(0x8);
+
   while (TRUE) {
     if (redrawScreen) {
       redrawScreen = FALSE;
