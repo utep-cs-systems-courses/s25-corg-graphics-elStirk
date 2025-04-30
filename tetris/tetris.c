@@ -20,30 +20,26 @@
 // --------------------------------------------------
 #define SW1           1
 #define SW2           2
-#define SW3           4
-#define SW4           8
-#define SWITCHES     (SW1|SW2|SW3|SW4)
+#define SWITCHES     (SW1|SW2)
 
 static int switches = 0;
 
-// actualiza P2IES según estado actual de P2IN
+// ajusta P2IES para detectar flancos de los pulsadores
 static char switch_update_interrupt_sense() {
   char p2val = P2IN;
-  P2IES |=  (p2val & SWITCHES);    // si lectura alta, detectar bajada
-  P2IES &= ~(p2val | ~SWITCHES);   // si lectura baja, detectar subida
+  P2IES |=  (p2val & SWITCHES);    // si entrada alta, detectar bajada
+  P2IES &= ~(p2val | ~SWITCHES);   // si entrada baja, detectar subida
   return p2val;
 }
 
-// inicializa resistencias, interrupciones y dirección de P2
 void switch_init() {
-  P2REN |=  SWITCHES;   // pull-up/down habilitadas
+  P2REN |=  SWITCHES;   // habilita resistencias
   P2OUT |=  SWITCHES;   // pull-ups
-  P2DIR &= ~SWITCHES;   // entrada
-  P2IE  |=  SWITCHES;   // interrupciones P2
+  P2DIR &= ~SWITCHES;   // entradas
+  P2IE  |=  SWITCHES;   // interrupciones por P2
   switch_update_interrupt_sense();
 }
 
-// handler de interrupción que guarda máscaras de botones pulsados
 void switch_interrupt_handler() {
   char p2val = switch_update_interrupt_sense();
   switches = ~p2val & SWITCHES;
@@ -75,7 +71,7 @@ volatile int pieceStoppedFlag = FALSE;
 static short shapeCol, shapeRow;
 static char  shapeIndex = 0, colIndex = 0;
 
-// para borrado selectivo
+// para borrado selectivo de la pieza móvil
 static short lastCol = 0, lastRow = 0;
 static char  lastIdx = -1;
 
@@ -85,7 +81,7 @@ unsigned short shapeColors[NUM_SHAPES] = {
 #define BG_COLOR  COLOR_BLACK
 
 // --------------------------------------------------
-// Dibuja una pieza en (col,row) con color
+// Dibuja una pieza en (col,row) con el color indicado
 // --------------------------------------------------
 static void draw_piece(short col, short row, char idx, unsigned short color) {
   for (int i = 0; i < 4; i++) {
@@ -96,7 +92,7 @@ static void draw_piece(short col, short row, char idx, unsigned short color) {
 }
 
 // --------------------------------------------------
-// Refresca sólo la pieza móvil
+// Solo refresca la pieza móvil (borra la anterior si aplica)
 // --------------------------------------------------
 static void update_moving_shape(void) {
   if (lastIdx >= 0 && !pieceStoppedFlag) {
@@ -110,17 +106,31 @@ static void update_moving_shape(void) {
 }
 
 // --------------------------------------------------
-// ISR Watchdog: controla caída, colisiones, stack y Game Over
+// ISR del Watchdog: mueve pieza, checa colisión, stack,
+// reinicio de juego y ahora manejo de SW1/SW2
 // --------------------------------------------------
 void wdt_c_handler() {
   static int tick = 0;
-  if (++tick < 64) return;   // ralentiza
+  if (++tick < 64) return;   // ralentiza (~512 Hz / 64)
   tick = 0;
 
-  // 1) posible nueva Y
-  short newRow = shapeRow + BLOCK_SIZE;
+  // --- manejo lateral por botones ---
+  if (switches & SW1) {
+    shapeCol -= 5;
+    if (shapeCol < 0) shapeCol = 0;
+    switches &= ~SW1;
+  }
+  if (switches & SW2) {
+    shapeCol += 5;
+    {
+      int maxC = (numColumns - 1) * BLOCK_SIZE;
+      if (shapeCol > maxC) shapeCol = maxC;
+    }
+    switches &= ~SW2;
+  }
 
-  // 2) comprueba colisión bloque a bloque
+  // --- caída vertical ---
+  short newRow = shapeRow + BLOCK_SIZE;
   int collided = FALSE;
   for (int i = 0; i < 4; i++) {
     int x = shapeCol + shapes[shapeIndex][i].x * BLOCK_SIZE;
@@ -134,10 +144,10 @@ void wdt_c_handler() {
   }
 
   if (!collided) {
-    // sin choque → cae
+    // sin colisión → actualiza posición
     shapeRow = newRow;
   } else {
-    // si choca antes de entrar → reinicio total
+    // colisiona antes de entrar → Game Over y reinicio
     if (shapeRow < 0) {
       clearScreen(BG_COLOR);
       memset(grid, 0, sizeof grid);
@@ -147,7 +157,7 @@ void wdt_c_handler() {
       redrawScreen = TRUE;
       return;
     }
-    // choca dentro → fija la pieza actual
+    // colisiona dentro → fija la pieza actual
     for (int i = 0; i < 4; i++) {
       int x = shapeCol + shapes[shapeIndex][i].x * BLOCK_SIZE;
       int y = shapeRow + shapes[shapeIndex][i].y * BLOCK_SIZE;
@@ -157,8 +167,7 @@ void wdt_c_handler() {
     }
     draw_piece(shapeCol, shapeRow, shapeIndex, shapeColors[shapeIndex]);
     pieceStoppedFlag = TRUE;
-
-    // siguiente pieza
+    // nueva pieza
     shapeIndex = (shapeIndex + 1) % NUM_SHAPES;
     colIndex   = (colIndex   + 1) % numColumns;
     shapeCol   = colIndex * BLOCK_SIZE;
@@ -172,54 +181,39 @@ void wdt_c_handler() {
 // main()
 // --------------------------------------------------
 int main() {
-  // hardware
-  P1DIR |= BIT6; P1OUT |= BIT6;
+  // inicialización hardware
+  P1DIR |= BIT6; P1OUT |= BIT6;    // LED en P1.6 como indicador de CPU
   configureClocks();
   lcd_init();
-  switch_init();            // inicializamos botones
+  switch_init();                   // inicializa SW1/SW2
   clearScreen(BG_COLOR);
 
   memset(grid, 0, sizeof grid);
 
+  // pieza inicial arriba
   shapeIndex = 0;
   colIndex   = 0;
   shapeCol   = 0;
   shapeRow   = -BLOCK_SIZE * 4;
 
-  enableWDTInterrupts();
-  or_sr(0x8);               // GIE
+  enableWDTInterrupts();           // activa ISR del WDT
+  or_sr(0x8);                      // GIE
 
-  // bucle principal
+  // bucle principal: solo redibuja la pieza móvil
   while (TRUE) {
     if (redrawScreen) {
       redrawScreen = FALSE;
       update_moving_shape();
     }
-    // manejo de botones: SW1 izquierda, SW2 derecha
-    if (switches & SW1) {
-      shapeCol -= 5;
-      if (shapeCol < 0) shapeCol = 0;
-      switches &= ~SW1;
-      redrawScreen = TRUE;
-    }
-    if (switches & SW2) {
-      shapeCol += 5;
-      {
-        int maxCol = (numColumns - 1) * BLOCK_SIZE;
-        if (shapeCol > maxCol) shapeCol = maxCol;
-      }
-      switches &= ~SW2;
-      redrawScreen = TRUE;
-    }
-    // bajo consumo hasta próxima ISR
+    // bajo consumo hasta la próxima interrupción
     P1OUT &= ~BIT6;
-    or_sr(0x10);
+    or_sr(0x10);  
     P1OUT |= BIT6;
   }
 }
 
 // --------------------------------------------------
-// ISR Puerto 2: detecta pulsaciones
+// ISR Puerto 2: detecta pulsaciones de SW1/SW2
 // --------------------------------------------------
 void __interrupt_vec(PORT2_VECTOR) Port_2() {
   if (P2IFG & SWITCHES) {
@@ -227,5 +221,4 @@ void __interrupt_vec(PORT2_VECTOR) Port_2() {
     switch_interrupt_handler();
   }
 }
-
 
