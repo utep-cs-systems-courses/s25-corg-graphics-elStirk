@@ -3,8 +3,8 @@
 #include "lcdutils.h"
 #include "lcddraw.h"
 
-// Tamaño de cada bloque (en píxeles) (ahora más pequeño)
-#define BLOCK_SIZE 5
+// Tamaño de cada bloque (en píxeles)
+#define BLOCK_SIZE 10
 
 // Definición de formas Tetris (4 bloques cada una)
 typedef struct { short x, y; } Offset;
@@ -20,12 +20,13 @@ const Offset shapes[][4] = {
 #define NUM_COLUMNS 5
 static short colPositions[NUM_COLUMNS];
 
-// Registro de piezas colocadas para stacking (reducción de memoria)
+// Registro de piezas colocadas para stacking
 // Cálculo de capacidad de stacking:
-// Pantalla rotada: altura vertical = 128px, BLOCK_SIZE = 5px → 128/5 = 25 filas
-// Altura máxima de pieza = 2 bloques → 25/2 = 12 piezas por columna
-// NUM_COLUMNS = 5 → 12*5 = 60 piezas máximo en pantalla
-#define MAX_PLACED 60
+// Pantalla rotada: altura vertical = 128px, BLOCK_SIZE = 10px → 128/10 = 12.8 filas → 12 filas
+// Altura máxima de pieza = 2 bloques → 12/2 = 6 piezas por columna
+// NUM_COLUMNS = 5 → 6*5 = 30 piezas máximo en pantalla
+#define MAX_PLACED 30
+
 typedef struct { short col, row; char idx; } Placed;
 static Placed placed[MAX_PLACED];
 static int placedCount = 0;
@@ -67,10 +68,10 @@ void draw_all() {
   }
 }
 
-// Watchdog Timer Handler: mueve la pieza hacia abajo y detecta colisión con "suelo"
+// Watchdog Timer Handler: mueve la pieza hacia abajo y detecta colisión
 void wdt_c_handler() {
   static int tick = 0;
-  if (++tick < 64) return;  // ajuste de velocidad
+  if (++tick < 64) return;
   tick = 0;
 
   // Mover pieza
@@ -81,7 +82,7 @@ void wdt_c_handler() {
   if (shapeRow + BLOCK_SIZE >= screenHeight) {
     collided = 1;
   } else {
-    // Verificar contra cada pieza colocada
+    // Verificar contra piezas colocadas
     for (int p = 0; p < placedCount; p++) {
       for (int i = 0; i < 4; i++) {
         int x = shapeCol + shapes[shapeIndex][i].x * BLOCK_SIZE;
@@ -99,11 +100,11 @@ void wdt_c_handler() {
   if (collided) {
     // Ajustar posición final justo arriba
     shapeRow -= BLOCK_SIZE;
-    // Guardar pieza en el arreglo de colocadas
+    // Guardar pieza
     if (placedCount < MAX_PLACED) {
       placed[placedCount++] = (Placed){ shapeCol, shapeRow, shapeIndex };
     }
-    // Generar nueva pieza
+    // Nueva pieza
     shapeIndex = (shapeIndex + 1) % NUM_SHAPES;
     colIndex   = (colIndex   + 1) % NUM_COLUMNS;
     shapeCol   = colPositions[colIndex];
@@ -113,36 +114,30 @@ void wdt_c_handler() {
 }
 
 int main() {
-  // Inicialización básica
-  P1DIR |= BIT6;  P1OUT |= BIT6;      // LED en P1.6 indica actividad
+  P1DIR |= BIT6;  P1OUT |= BIT6;
   configureClocks();
   lcd_init();
   clearScreen(BG_COLOR);
 
-  // Columnas de aparición de piezas
+  // Columnas de aparición
   colPositions[0] = 10;
   colPositions[1] = screenWidth / 4;
   colPositions[2] = screenWidth / 2;
   colPositions[3] = 3 * screenWidth / 4;
   colPositions[4] = screenWidth - 10;
 
-  // Estado inicial de la primera pieza
-  shapeIndex = 0;
-  colIndex   = 0;
+  shapeIndex = 0; colIndex = 0;
   shapeCol   = colPositions[colIndex];
   shapeRow   = -BLOCK_SIZE * 4;
 
-  enableWDTInterrupts();  // activa WDT
-  or_sr(0x8);             // interrupciones globales ON
+  enableWDTInterrupts();
+  or_sr(0x8);
 
   while (1) {
     if (redrawScreen) {
       redrawScreen = 0;
       draw_all();
     }
-    // Bajo consumo hasta próxima interrupción
-    P1OUT &= ~BIT6;
-    or_sr(0x10);
-    P1OUT |= BIT6;
+    P1OUT &= ~BIT6; or_sr(0x10); P1OUT |= BIT6;
   }
 }
