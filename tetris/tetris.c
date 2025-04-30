@@ -21,19 +21,26 @@ static int numColumns;
 
 // Apilamiento de piezas fijas
 typedef struct { short col, row; char idx; } Placed;
-#define MAX_PLACED 30  // 5 columnas × 6 piezas (128/ BLOCK_SIZE = 12 filas /2)
+#define MAX_PLACED 30
 static Placed placed[MAX_PLACED];
 static int placedCount = 0;
 
 // Estado de la pieza en caída
 enum { FALSE = 0, TRUE = 1 };
-volatile int redrawScreen = TRUE;      // debe ser global para el handler
+volatile int redrawScreen = TRUE;      // para el main loop
+volatile int pieceStoppedFlag = FALSE; // indica que acaba de fijarse una pieza
+
 static short shapeCol, shapeRow;
 static char shapeIndex = 0, colIndex = 0;
 
+// Para el borrado selectivo en update_moving_shape
+static short lastCol = 0, lastRow = 0;
+static char  lastIdx = -1;
+
 // Colores por forma
-unsigned short shapeColors[NUM_SHAPES] = { COLOR_RED, COLOR_GREEN,
-                                           COLOR_ORANGE, COLOR_BLUE };
+unsigned short shapeColors[NUM_SHAPES] = {
+  COLOR_RED, COLOR_GREEN, COLOR_ORANGE, COLOR_BLUE
+};
 #define BG_COLOR COLOR_BLACK
 
 // Dibuja una forma completa en (col,row)
@@ -45,27 +52,26 @@ static void draw_piece(short col, short row, char idx, unsigned short color) {
   }
 }
 
-// Actualiza sólo la pieza móvil, borrando la anterior
+// Actualiza sólo la pieza móvil, borrando la anterior si no acabo de fijarse
 static void update_moving_shape(void) {
-  static short lastCol = 0, lastRow = 0;
-  static char  lastIdx = -1;
-  // Borrar la forma anterior pintando fondo
-  if (lastIdx >= 0) {
+  // Si había una pieza anterior y no ha sido fijada justo ahora, la borramos
+  if (lastIdx >= 0 && !pieceStoppedFlag) {
     draw_piece(lastCol, lastRow, lastIdx, BG_COLOR);
   }
-  // Dibujar forma actual
-  draw_piece(shapeCol, shapeRow, shapeIndex,
-             shapeColors[shapeIndex]);
-  // Guardar para siguiente iteración
+  // Dibujamos la forma actual
+  draw_piece(shapeCol, shapeRow, shapeIndex, shapeColors[shapeIndex]);
+  // Guardamos para el próximo ciclo
   lastCol = shapeCol;
   lastRow = shapeRow;
   lastIdx = shapeIndex;
+  // Reseteamos la bandera para próximos ciclos
+  pieceStoppedFlag = FALSE;
 }
 
-// WDT ISR: hace caer la pieza y la apila
+// WDT ISR: hace caer la pieza y la apila si colisiona
 void wdt_c_handler() {
   static int tick = 0;
-  if (++tick < 64) return;  // controla velocidad (~512Hz/64)
+  if (++tick < 64) return;  // controla velocidad
   tick = 0;
 
   // Mover pieza hacia abajo
@@ -90,9 +96,11 @@ void wdt_c_handler() {
     // Guardar pieza fija y dibujarla
     if (placedCount < MAX_PLACED) {
       placed[placedCount++] = (Placed){ shapeCol, shapeRow, shapeIndex };
-      draw_piece(shapeCol, shapeRow, shapeIndex,
-                 shapeColors[shapeIndex]);
+      draw_piece(shapeCol, shapeRow, shapeIndex, shapeColors[shapeIndex]);
     }
+    // Indicamos que justo fijamos una pieza
+    pieceStoppedFlag = TRUE;
+
     // Generar nueva pieza a la derecha
     shapeIndex = (shapeIndex + 1) % NUM_SHAPES;
     colIndex   = (colIndex + 1) % numColumns;
@@ -100,6 +108,7 @@ void wdt_c_handler() {
     shapeRow   = -BLOCK_SIZE * 4;
   }
 
+  // Señalamos al bucle principal que debe redibujar
   redrawScreen = TRUE;
 }
 
@@ -135,3 +144,4 @@ int main() {
     P1OUT |= BIT6;
   }
 }
+
