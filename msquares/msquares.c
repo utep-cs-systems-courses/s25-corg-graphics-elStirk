@@ -3,150 +3,135 @@
 #include "lcdutils.h"
 #include "lcddraw.h"
 
-typedef struct {
-  short col, row;
-} Pos;
+// Tamaño de cada bloque (en píxeles)
+#define BLOCK_SIZE 10
 
-Pos positions[] = {
-  {10,10},			/* upper left */
-  {10, screenHeight-10}, 	/* lower left */
-  {screenWidth - 10, screenHeight-10}, /* lower right */
-  {screenWidth - 10, 10},	       /* upper right */
-  {screenWidth/2, screenHeight/2}      /* middle */
+// Formas Tetris (4 offsets cada una)
+typedef struct { short x, y; } Offset;
+const Offset shapes[][4] = {
+  {{0,0},{1,0},{0,1},{1,1}},  // Cuadrado
+  {{0,0},{1,0},{2,0},{3,0}},  // Línea
+  {{0,0},{0,1},{1,1},{2,1}},  // L invertida
+  {{1,0},{0,1},{1,1},{2,1}}   // T
 };
-#define NUM_POSITIONS 5
+#define NUM_SHAPES (sizeof(shapes)/sizeof(shapes[0]))
 
-unsigned short sqColors[] = {COLOR_RED, COLOR_GREEN, COLOR_ORANGE, COLOR_BLUE};
-#define NUM_SQCOLORS 4
+// Columnas según anchura de pantalla
+static int numColumns;
+
+// Apilamiento de piezas fijas
+typedef struct { short col, row; char idx; } Placed;
+#define MAX_PLACED 30  // 5 columnas × 6 piezas (128/ BLOCK_SIZE = 12 filas /2)
+static Placed placed[MAX_PLACED];
+static int placedCount = 0;
+
+// Estado de la pieza en caída
+enum { FALSE = 0, TRUE = 1 };
+volatile int redrawScreen = TRUE;      // debe ser global para el handler
+static short shapeCol, shapeRow;
+static char shapeIndex = 0, colIndex = 0;
+
+// Colores por forma
+unsigned short shapeColors[NUM_SHAPES] = { COLOR_RED, COLOR_GREEN,
+                                           COLOR_ORANGE, COLOR_BLUE };
 #define BG_COLOR COLOR_BLACK
 
-char current_position = 0, current_color = 0;
-  
-// WARNING: LCD DISPLAY USES P1.0.  Do not touch!!! 
-
-#define LED BIT6		/* note that bit zero req'd for display */
-
-#define SWITCHES 15
-
-int redrawScreen = 1;
-
-static char 
-switch_update_interrupt_sense()
-{
-  char p2val = P2IN;
-  /* update switch interrupt to detect changes from current buttons */
-  P2IES |= (p2val & SWITCHES);	/* if switch up, sense down */
-  P2IES &= (p2val | ~SWITCHES);	/* if switch down, sense up */
-  return p2val;
+// Dibuja una forma completa en (col,row)
+static void draw_piece(short col, short row, char idx, unsigned short color) {
+  for (int i = 0; i < 4; i++) {
+    int x = col + shapes[idx][i].x * BLOCK_SIZE;
+    int y = row + shapes[idx][i].y * BLOCK_SIZE;
+    fillRectangle(x, y, BLOCK_SIZE, BLOCK_SIZE, color);
+  }
 }
 
-void 
-switch_init()			/* setup switch */
-{  
-  P2REN |= SWITCHES;		/* enables resistors for switches */
-  P2IE |= SWITCHES;		/* enable interrupts from switches */
-  P2OUT |= SWITCHES;		/* pull-ups for switches */
-  P2DIR &= ~SWITCHES;		/* set switches' bits for input */
-  switch_update_interrupt_sense();
+// Actualiza sólo la pieza móvil, borrando la anterior
+static void update_moving_shape(void) {
+  static short lastCol = 0, lastRow = 0;
+  static char  lastIdx = -1;
+  // Borrar la forma anterior pintando fondo
+  if (lastIdx >= 0) {
+    draw_piece(lastCol, lastRow, lastIdx, BG_COLOR);
+  }
+  // Dibujar forma actual
+  draw_piece(shapeCol, shapeRow, shapeIndex,
+             shapeColors[shapeIndex]);
+  // Guardar para siguiente iteración
+  lastCol = shapeCol;
+  lastRow = shapeRow;
+  lastIdx = shapeIndex;
 }
 
-int switches = 0;
+// WDT ISR: hace caer la pieza y la apila
+void wdt_c_handler() {
+  static int tick = 0;
+  if (++tick < 64) return;  // controla velocidad (~512Hz/64)
+  tick = 0;
 
-void
-switch_interrupt_handler()
-{
-  char p2val = switch_update_interrupt_sense();
-  switches = ~p2val & SWITCHES;
+  // Mover pieza hacia abajo
+  shapeRow += BLOCK_SIZE;
 
-  if (switches & SWITCHES) { 	/* a switch is depresssed */
-    redrawScreen = 1;
-    for (char swNum = 0; swNum < 4; swNum++) { /* respond to lowest button pressed */
-      int swFlag = 1 << swNum;
-      if (switches & swFlag) {
-	current_position = swNum;
-	break;
+  // Detectar colisión con suelo o pieza fija
+  int collided = FALSE;
+  if (shapeRow + BLOCK_SIZE > screenHeight - 1) {
+    collided = TRUE;
+  } else {
+    for (int p = 0; p < placedCount && !collided; p++) {
+      if (shapeCol == placed[p].col &&
+          shapeRow + BLOCK_SIZE == placed[p].row) {
+        collided = TRUE;
       }
     }
   }
+
+  if (collided) {
+    // Ajustar posición encima de colisión
+    shapeRow -= BLOCK_SIZE;
+    // Guardar pieza fija y dibujarla
+    if (placedCount < MAX_PLACED) {
+      placed[placedCount++] = (Placed){ shapeCol, shapeRow, shapeIndex };
+      draw_piece(shapeCol, shapeRow, shapeIndex,
+                 shapeColors[shapeIndex]);
+    }
+    // Generar nueva pieza a la derecha
+    shapeIndex = (shapeIndex + 1) % NUM_SHAPES;
+    colIndex   = (colIndex + 1) % numColumns;
+    shapeCol   = colIndex * BLOCK_SIZE;
+    shapeRow   = -BLOCK_SIZE * 4;
+  }
+
+  redrawScreen = TRUE;
 }
 
-void wdt_c_handler()
-{
-  static int sec2Count = 0;
-  static int sec1Count = 0;
-  if (sec2Count++ >= 125) {		/* 2/sec */
-    sec2Count = 0;
-    current_color = (current_color+1) % NUM_SQCOLORS;
-    redrawScreen = 1;
-  }
-  if (sec1Count++ >= 250) {		/* 1/sec */
-    sec1Count = 0;
-    current_position = (current_position+1) % NUM_POSITIONS;
-    redrawScreen = 1;
-  }
-}
-  
-void update_shape();
-
-void main()
-{
-  
-  P1DIR |= LED;		/**< Green led on when CPU on */
-  P1OUT |= LED;
+int main() {
+  // Inicialización hardware
+  P1DIR |= BIT6; P1OUT |= BIT6;  // LED en P1.6
   configureClocks();
   lcd_init();
-  switch_init();
-  
-  enableWDTInterrupts();      /**< enable periodic interrupt */
-  or_sr(0x8);	              /**< GIE (enable interrupts) */
-  
   clearScreen(BG_COLOR);
-  while (1) {			/* forever */
+
+  // Columnas disponibles
+  numColumns = screenWidth / BLOCK_SIZE;
+
+  // Pieza inicial
+  shapeIndex = 0;
+  colIndex   = 0;
+  shapeCol   = 0;
+  shapeRow   = -BLOCK_SIZE * 4;
+
+  // Activar WDT e interrupciones
+  enableWDTInterrupts();
+  or_sr(0x8);
+
+  // Bucle principal: solo actualiza pieza móvil
+  while (TRUE) {
     if (redrawScreen) {
-      redrawScreen = 0;
-      update_shape();
+      redrawScreen = FALSE;
+      update_moving_shape();
     }
-    P1OUT &= ~LED;	/* led off */
-    or_sr(0x10);	/**< CPU OFF */
-    P1OUT |= LED;	/* led on */
-  }
-}
-
-    
-    
-void
-update_shape()
-{
-  static char last_position = 0, last_color = 0;
-  redrawScreen = 0;
-  int pos, color;
-  and_sr(~8);  // mask interrupts (GIE = 0)
-  pos = current_position;	/* read state variables */
-  color = current_color;
-  or_sr(8); // unmask interrupts
-  if (pos == last_position && color == last_color) /* nothing to redraw */
-    return;
-
-  /* erase old shape */
-  short col = positions[last_position].col;
-  short row = positions[last_position].row;
-  if (pos != last_position)    /* erase if position changed */
-    fillRectangle(col-5, row-5, 10, 10, BG_COLOR); 
-  /* draw new shape */
-  col = positions[pos].col;
-  row = positions[pos].row;
-  fillRectangle(col-5, row-5, 10, 10, sqColors[color]); /* draw new shape */
-  /* remember color & pos for next redraw */
-  last_position = pos;
-  last_color = color;
-}
-
-
-/* Switch on S2 */
-void
-__interrupt_vec(PORT2_VECTOR) Port_2(){
-  if (P2IFG & SWITCHES) {	      /* did a button cause this interrupt? */
-    P2IFG &= ~SWITCHES;		      /* clear pending sw interrupts */
-    switch_interrupt_handler();	/* single handler for all switches */
+    // CPU OFF entre ISR
+    P1OUT &= ~BIT6;
+    or_sr(0x10);
+    P1OUT |= BIT6;
   }
 }
