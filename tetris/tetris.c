@@ -16,6 +16,40 @@
 #define MAX_ROWS       (SCREEN_HEIGHT / BLOCK_SIZE)  // 16
 
 // --------------------------------------------------
+// Definiciones de switches
+// --------------------------------------------------
+#define SW1           1
+#define SW2           2
+#define SW3           4
+#define SW4           8
+#define SWITCHES     (SW1|SW2|SW3|SW4)
+
+static int switches = 0;
+
+// actualiza P2IES según estado actual de P2IN
+static char switch_update_interrupt_sense() {
+  char p2val = P2IN;
+  P2IES |=  (p2val & SWITCHES);    // si lectura alta, detectar bajada
+  P2IES &= ~(p2val | ~SWITCHES);   // si lectura baja, detectar subida
+  return p2val;
+}
+
+// inicializa resistencias, interrupciones y dirección de P2
+void switch_init() {
+  P2REN |=  SWITCHES;   // pull-up/down habilitadas
+  P2OUT |=  SWITCHES;   // pull-ups
+  P2DIR &= ~SWITCHES;   // entrada
+  P2IE  |=  SWITCHES;   // interrupciones P2
+  switch_update_interrupt_sense();
+}
+
+// handler de interrupción que guarda máscaras de botones pulsados
+void switch_interrupt_handler() {
+  char p2val = switch_update_interrupt_sense();
+  switches = ~p2val & SWITCHES;
+}
+
+// --------------------------------------------------
 // Formas Tetris (4 offsets cada una)
 // --------------------------------------------------
 typedef struct { short x, y; } Offset;
@@ -28,34 +62,30 @@ const Offset shapes[][4] = {
 #define NUM_SHAPES  (sizeof(shapes)/sizeof(shapes[0]))
 
 // --------------------------------------------------
-// Variables globales
+// Variables globales de juego
 // --------------------------------------------------
-// Rejilla de ocupación: 1 = bloque fijo, 0 = vacío
 static char grid[MAX_COLUMNS][MAX_ROWS];
 static const int numColumns = MAX_COLUMNS;
 static const int numRows    = MAX_ROWS;
 
-// Flags para refresco y para no borrar pieza fija
 enum { FALSE = 0, TRUE = 1 };
 volatile int redrawScreen     = TRUE;
 volatile int pieceStoppedFlag = FALSE;
 
-// Estado de la pieza móvil
 static short shapeCol, shapeRow;
 static char  shapeIndex = 0, colIndex = 0;
 
-// Para borrado selectivo de la pieza móvil
+// para borrado selectivo
 static short lastCol = 0, lastRow = 0;
 static char  lastIdx = -1;
 
-// Colores por forma
 unsigned short shapeColors[NUM_SHAPES] = {
   COLOR_RED, COLOR_GREEN, COLOR_ORANGE, COLOR_BLUE
 };
 #define BG_COLOR  COLOR_BLACK
 
 // --------------------------------------------------
-// Dibuja una pieza en (col,row) con el color indicado
+// Dibuja una pieza en (col,row) con color
 // --------------------------------------------------
 static void draw_piece(short col, short row, char idx, unsigned short color) {
   for (int i = 0; i < 4; i++) {
@@ -66,7 +96,7 @@ static void draw_piece(short col, short row, char idx, unsigned short color) {
 }
 
 // --------------------------------------------------
-// Refresca sólo la pieza móvil, borrando la anterior
+// Refresca sólo la pieza móvil
 // --------------------------------------------------
 static void update_moving_shape(void) {
   if (lastIdx >= 0 && !pieceStoppedFlag) {
@@ -80,66 +110,55 @@ static void update_moving_shape(void) {
 }
 
 // --------------------------------------------------
-// ISR del Watchdog: mueve pieza, comprueba colisión,
-// gestiona apilamiento y reinicio de juego
+// ISR Watchdog: controla caída, colisiones, stack y Game Over
 // --------------------------------------------------
 void wdt_c_handler() {
   static int tick = 0;
-  if (++tick < 64) return;   // ralentiza (~512 Hz / 64)
+  if (++tick < 64) return;   // ralentiza
   tick = 0;
 
-  // 1) calculamos la nueva posición vertical potencial
+  // 1) posible nueva Y
   short newRow = shapeRow + BLOCK_SIZE;
 
-  // 2) comprobamos bloque a bloque si choca al bajar
+  // 2) comprueba colisión bloque a bloque
   int collided = FALSE;
   for (int i = 0; i < 4; i++) {
     int x = shapeCol + shapes[shapeIndex][i].x * BLOCK_SIZE;
     int y = newRow  + shapes[shapeIndex][i].y * BLOCK_SIZE;
     int c = x / BLOCK_SIZE;
     int r = y / BLOCK_SIZE;
-    // colisión con suelo
-    if (r >= numRows) {
-      collided = TRUE;
-      break;
-    }
-    // colisión con bloque fijo (solo si está dentro)
-    if (r >= 0 && grid[c][r]) {
+    if (r >= numRows || (r >= 0 && grid[c][r])) {
       collided = TRUE;
       break;
     }
   }
 
   if (!collided) {
-    // no colisiona → aplicamos el movimiento
+    // sin choque → cae
     shapeRow = newRow;
   } else {
-    // colisiona antes de entrar → reinicio completo (Game Over)
+    // si choca antes de entrar → reinicio total
     if (shapeRow < 0) {
       clearScreen(BG_COLOR);
       memset(grid, 0, sizeof grid);
-      shapeIndex = 0;
-      colIndex   = 0;
+      shapeIndex = colIndex = 0;
       shapeCol   = 0;
       shapeRow   = -BLOCK_SIZE * 4;
       redrawScreen = TRUE;
       return;
     }
-    // choca ya dentro de pantalla → fijar en la posición actual
+    // choca dentro → fija la pieza actual
     for (int i = 0; i < 4; i++) {
       int x = shapeCol + shapes[shapeIndex][i].x * BLOCK_SIZE;
       int y = shapeRow + shapes[shapeIndex][i].y * BLOCK_SIZE;
       int c = x / BLOCK_SIZE;
       int r = y / BLOCK_SIZE;
-      if (r >= 0 && r < numRows) {
-        grid[c][r] = 1;
-      }
+      if (r >= 0 && r < numRows) grid[c][r] = 1;
     }
-    // dibujamos la pieza fija
     draw_piece(shapeCol, shapeRow, shapeIndex, shapeColors[shapeIndex]);
     pieceStoppedFlag = TRUE;
 
-    // preparamos la siguiente pieza
+    // siguiente pieza
     shapeIndex = (shapeIndex + 1) % NUM_SHAPES;
     colIndex   = (colIndex   + 1) % numColumns;
     shapeCol   = colIndex * BLOCK_SIZE;
@@ -153,35 +172,60 @@ void wdt_c_handler() {
 // main()
 // --------------------------------------------------
 int main() {
-  // inicialización hardware
-  P1DIR |= BIT6; P1OUT |= BIT6;   // LED en P1.6
+  // hardware
+  P1DIR |= BIT6; P1OUT |= BIT6;
   configureClocks();
   lcd_init();
+  switch_init();            // inicializamos botones
   clearScreen(BG_COLOR);
 
-  // vaciamos rejilla
   memset(grid, 0, sizeof grid);
 
-  // estado inicial de la pieza móvil
   shapeIndex = 0;
   colIndex   = 0;
   shapeCol   = 0;
   shapeRow   = -BLOCK_SIZE * 4;
 
-  // activamos WDT e interrupciones
   enableWDTInterrupts();
-  or_sr(0x8);
+  or_sr(0x8);               // GIE
 
-  // bucle principal: pinta sólo la pieza móvil
+  // bucle principal
   while (TRUE) {
     if (redrawScreen) {
       redrawScreen = FALSE;
       update_moving_shape();
     }
-    // modo bajo consumo hasta la próxima ISR
+    // manejo de botones: SW1 izquierda, SW2 derecha
+    if (switches & SW1) {
+      shapeCol -= 5;
+      if (shapeCol < 0) shapeCol = 0;
+      switches &= ~SW1;
+      redrawScreen = TRUE;
+    }
+    if (switches & SW2) {
+      shapeCol += 5;
+      {
+        int maxCol = (numColumns - 1) * BLOCK_SIZE;
+        if (shapeCol > maxCol) shapeCol = maxCol;
+      }
+      switches &= ~SW2;
+      redrawScreen = TRUE;
+    }
+    // bajo consumo hasta próxima ISR
     P1OUT &= ~BIT6;
     or_sr(0x10);
     P1OUT |= BIT6;
   }
 }
+
+// --------------------------------------------------
+// ISR Puerto 2: detecta pulsaciones
+// --------------------------------------------------
+void __interrupt_vec(PORT2_VECTOR) Port_2() {
+  if (P2IFG & SWITCHES) {
+    P2IFG &= ~SWITCHES;
+    switch_interrupt_handler();
+  }
+}
+
 
