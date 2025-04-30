@@ -79,15 +79,22 @@ static void switch_interrupt_handler(void);
 static int  checkCollision(char idx, short testCol, short testRow, char testRot);
 
 // --------------------------------------------------
-// Dibuja el valor de score en esquina inferior derecha
+// Dibuja el valor de score (limpia área antes)
 // --------------------------------------------------
 static void draw_score(void) {
   char buf[12];
   sprintf(buf, "%d", score);
   int len = strlen(buf);
-  int x = SCREEN_WIDTH - (len * 5) - 2;
+  // Área máxima de 6 dígitos
+  int max_digits = 6;
+  int width = max_digits * 5 + 2;
   int y = SCREEN_HEIGHT - 7;
-  drawString5x7(x, y, buf, COLOR_WHITE, BG_COLOR);
+  int x0 = SCREEN_WIDTH - width;
+  // Limpia región de score
+  fillRectangle(x0, y, width, 7, BG_COLOR);
+  // Posición real para el texto
+  int x1 = SCREEN_WIDTH - (len * 5) - 2;
+  drawString5x7(x1, y, buf, COLOR_WHITE, BG_COLOR);
 }
 
 // --------------------------------------------------
@@ -104,8 +111,8 @@ static void draw_piece(short col, short row, char idx, char rot, unsigned short 
       case 3: rx = oy;  ry = -ox; break;
       default: rx = ox;  ry = oy;  break;
     }
-    fillRectangle((col + rx * BLOCK_SIZE),
-                  (row + ry * BLOCK_SIZE),
+    fillRectangle(col + rx * BLOCK_SIZE,
+                  row + ry * BLOCK_SIZE,
                   BLOCK_SIZE, BLOCK_SIZE,
                   color);
   }
@@ -246,7 +253,7 @@ void switch_interrupt_handler(void) {
     if (!sw2_state) { sw2_state = 1; sw2_press_ticks = 0; }
   } else if (sw2_state) {
     if (sw2_press_ticks < LONG_PRESS_TICKS &&
-        !checkCollision(shapeIndex, shapeCol, shapeRow, (shapeRotation+1)%4)) {
+        !checkCollision(shapeIndex, shapeCol, shapeRow, (shapeRotation + 1) % 4)) {
       shapeRotation = (shapeRotation + 1) % 4;
     }
     sw2_state = 0;
@@ -295,7 +302,6 @@ void wdt_c_handler(void) {
     shapeRow += BLOCK_SIZE;
   } else {
     if (shapeRow < 0) { reset_game(); return; }
-    // fijar en grid
     int baseCol = shapeCol / BLOCK_SIZE;
     int baseRow = shapeRow / BLOCK_SIZE;
     for (int i = 0; i < 4; i++) {
@@ -310,7 +316,9 @@ void wdt_c_handler(void) {
       }
       int c = baseCol + rx;
       int r = baseRow + ry;
-      if (c>=0 && c<numColumns && r>=0 && r<numRows) grid[c][r] = shapeIndex;
+      if (c >= 0 && c < numColumns && r >= 0 && r < numRows) {
+        grid[c][r] = shapeIndex;
+      }
     }
     draw_grid();
     clear_full_rows();
