@@ -46,6 +46,8 @@ static short lastCol = 0, lastRow = 0;
 static char  lastIdx  = -1;
 static char  lastRot  = 0;
 
+static int score = 0;
+
 unsigned short shapeColors[NUM_SHAPES] = {
   COLOR_RED, COLOR_GREEN, COLOR_ORANGE, COLOR_BLUE
 };
@@ -74,7 +76,7 @@ static void draw_score_label(void) {
   int len = strlen(label);
   int x = SCREEN_WIDTH - len * 5;
   int y = SCREEN_HEIGHT - 7;
-  drawString5x7(x, y, (char *)label, COLOR_WHITE, BG_COLOR);
+  drawString5x7(x, y, score, COLOR_WHITE, BG_COLOR);
 }
 
 // --------------------------------------------------
@@ -116,6 +118,7 @@ static void draw_grid(void) {
 // Elimina filas completas y recoloca las de arriba
 // --------------------------------------------------
 static void clear_full_rows(void) {
+  score += 50;
   for (int r = 0; r < numRows; r++) {
     int full = TRUE;
     for (int c = 0; c < numColumns; c++) {
