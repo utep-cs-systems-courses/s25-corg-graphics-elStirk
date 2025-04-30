@@ -67,7 +67,7 @@ static void draw_score_label(void) {
   int len = strlen(label);
   int x = SCREEN_WIDTH - len * 5;
   int y = SCREEN_HEIGHT - 7;
-  drawString5x7(0, 0, (char *)label, COLOR_WHITE, BG_COLOR);
+  drawString5x7(x, y, (char *)label, COLOR_WHITE, BG_COLOR);
 }
 
 // --------------------------------------------------
@@ -122,7 +122,7 @@ static void clear_full_rows(void) {
       clearScreen(BG_COLOR);
       draw_grid();
       draw_score_label();
-      r--;  
+      r--;
     }
   }
 }
@@ -204,7 +204,7 @@ void switch_interrupt_handler(void) {
     clearScreen(BG_COLOR);
     memset(grid, -1, sizeof grid);
     shapeIndex=shapeRotation=colIndex=0;
-    shapeCol=0; shapeRow=-BLOCK_SIZE*4 + 10;  // <— spawn 10px más abajo
+    shapeCol=0; shapeRow=-BLOCK_SIZE*4 + 10;
     draw_score_label();
   }
   // SW4: mover derecha
@@ -253,16 +253,14 @@ void wdt_c_handler(void) {
   if (!collided) {
     shapeRow = newRow;
   } else {
-    // Si colisiona antes de aparecer, reinicia partida
     if (shapeRow < 0) {
       clearScreen(BG_COLOR);
       memset(grid,-1,sizeof grid);
       shapeIndex=shapeRotation=colIndex=0;
-      shapeCol=0; shapeRow=-BLOCK_SIZE*4 + 10;  // <— spawn 10px más abajo
+      shapeCol=0; shapeRow=-BLOCK_SIZE*4 + 10;
       draw_score_label();
       return;
     }
-    // Fija la pieza en la rejilla
     for (int i=0;i<4;i++){
       int ox=shapes[shapeIndex][i].x;
       int oy=shapes[shapeIndex][i].y;
@@ -279,7 +277,7 @@ void wdt_c_handler(void) {
     shapeRotation=0;
     colIndex=(colIndex+1)%numColumns;
     shapeCol=colIndex*BLOCK_SIZE;
-    shapeRow=-BLOCK_SIZE*4 + 10;  // <— spawn 10px más abajo
+    shapeRow=-BLOCK_SIZE*4 + 10;
   }
   redrawScreen=TRUE;
 }
@@ -294,7 +292,7 @@ int main(void) {
   draw_score_label();
   switch_init(); memset(grid,-1,sizeof grid);
   shapeIndex=shapeRotation=colIndex=0;
-  shapeCol=0; shapeRow=-BLOCK_SIZE*4 + 10;  // <— spawn 10px más abajo
+  shapeCol=0; shapeRow=-BLOCK_SIZE*4 + 10;
   enableWDTInterrupts(); or_sr(0x8);
   while(TRUE) {
     if(redrawScreen) { redrawScreen=FALSE; update_moving_shape(); }
