@@ -14,6 +14,13 @@
 #define MAX_COLUMNS     (SCREEN_WIDTH  / BLOCK_SIZE)
 #define MAX_ROWS        (SCREEN_HEIGHT / BLOCK_SIZE)
 
+// Máscara de los 4 switches en P2 (SW1..SW4 = BIT0..BIT3)
+#define SWITCHES        (BIT0 | BIT1 | BIT2 | BIT3)
+
+// Constantes booleanas
+#define TRUE            1
+#define FALSE           0
+
 // Tiempo aproximado de “long-press” de 3 segundos (MCLK = 1 MHz)
 #define LONG_PRESS_CYCLES 3000000  
 
@@ -44,7 +51,7 @@ unsigned short shapeColors[NUM_SHAPES] = {
 // --------------------------------------------------
 static int grid[MAX_COLUMNS][MAX_ROWS];
 static int numColumns = MAX_COLUMNS, numRows = MAX_ROWS;
-static char shapeIndex, shapeRotation;
+static char shapeIndex, shapeRotation, colIndex;      // <-- colIndex añadido
 static short shapeCol, shapeRow;
 static char lastIdx, lastRot;
 static short lastCol, lastRow;
@@ -70,8 +77,6 @@ void switch_interrupt_handler(void);
 static void draw_score_label(void) {
   const char *label = "SCORE:";
   int len = strlen(label);
-  int x = SCREEN_WIDTH - len * 5;
-  int y = SCREEN_HEIGHT - 7;
   drawString5x7(0, 0, (char *)label, COLOR_WHITE, BG_COLOR);
 }
 
@@ -91,13 +96,11 @@ static void clear_full_rows(void) {
       if (grid[c][r] < 0) { full = FALSE; break; }
     }
     if (full) {
-      // Bajar todo lo de arriba
       for (int rr = r; rr > 0; rr--) {
         for (int c = 0; c < numColumns; c++) {
           grid[c][rr] = grid[c][rr-1];
         }
       }
-      // Limpiar fila 0
       for (int c = 0; c < numColumns; c++) grid[c][0] = -1;
       clearScreen(BG_COLOR);
       draw_grid();
@@ -117,8 +120,8 @@ static void draw_piece(short col, short row, char idx, char rot, unsigned short 
       case 3: rx = oy;  ry = -ox; break;
       default: rx = ox; ry = oy; break;
     }
-    drawRect((col + rx*BLOCK_SIZE),
-             (row + ry*BLOCK_SIZE),
+    drawRect(col + rx*BLOCK_SIZE,
+             row + ry*BLOCK_SIZE,
              BLOCK_SIZE, BLOCK_SIZE,
              color);
   }
@@ -155,7 +158,6 @@ void wdt_c_handler(void) {
   if (!collided) {
     shapeRow = newRow;
   } else {
-    // Fijar pieza y preparar la siguiente
     for (int i = 0; i < 4; i++) {
       int ox = shapes[shapeIndex][i].x;
       int oy = shapes[shapeIndex][i].y;
@@ -175,12 +177,12 @@ void wdt_c_handler(void) {
     lastIdx = shapeIndex; lastRot = shapeRotation;
     lastCol = shapeCol;   lastRow = shapeRow;
     pieceStoppedFlag = TRUE;
-    // Nueva pieza
+    // nueva pieza
     colIndex = (colIndex + 1) % NUM_SHAPES;
-    shapeIndex = colIndex;
+    shapeIndex  = colIndex;
     shapeRotation = 0;
-    shapeCol = 0;
-    shapeRow = -BLOCK_SIZE*4;
+    shapeCol    = 0;
+    shapeRow    = -BLOCK_SIZE*4;
   }
   redrawScreen = TRUE;
 }
@@ -190,7 +192,6 @@ void wdt_c_handler(void) {
 // --------------------------------------------------
 static char switch_update_interrupt_sense(void) {
   char p2val = P2IN;
-  /* update interrupt sense to detect changes from current buttons */
   P2IES |= (p2val & SWITCHES);
   P2IES &= (p2val | ~SWITCHES);
   return p2val;
@@ -215,7 +216,7 @@ void switch_interrupt_handler(void) {
   pieceStoppedFlag = FALSE;
 
   // SW1: mover izquierda
-  if (switches & (1<<0)) {
+  if (switches & BIT0) {
     short newCol = shapeCol - BLOCK_SIZE;
     int valid = TRUE;
     for (int i = 0; i < 4; i++) {
@@ -236,15 +237,14 @@ void switch_interrupt_handler(void) {
     if (valid) shapeCol = newCol;
   }
 
-  // SW2: rotar con short-press; long-press (>3 s) → reinicio
-  if (switches & (1<<1)) {
+  // SW2: rotar / long-press reinicia
+  if (switches & BIT1) {
     unsigned long cnt = LONG_PRESS_CYCLES;
-    // Esperar hasta que suelte o agote cnt
-    while ((~P2IN & (1<<1)) && cnt--) {
+    while ((~P2IN & BIT1) && cnt--) {
       __delay_cycles(1);
     }
     if (cnt == 0) {
-      // Long-press detectado: reiniciar juego
+      // long-press: reiniciar
       clearScreen(BG_COLOR);
       memset(grid, -1, sizeof grid);
       shapeIndex = shapeRotation = colIndex = 0;
@@ -252,7 +252,7 @@ void switch_interrupt_handler(void) {
       shapeRow = -BLOCK_SIZE*4;
       draw_score_label();
     } else {
-      // Short-press: rotar pieza
+      // short-press: rotar
       char newRot = (shapeRotation + 1) % 4;
       int valid = TRUE;
       for (int i = 0; i < 4; i++) {
@@ -267,7 +267,7 @@ void switch_interrupt_handler(void) {
         }
         int c = (shapeCol + rx*BLOCK_SIZE)/BLOCK_SIZE;
         int r = (shapeRow + ry*BLOCK_SIZE)/BLOCK_SIZE;
-        if (c < 0 || c >= numColumns || r >= numRows || (r >= 0 && grid[c][r] >= 0)) {
+        if (c<0 || c>=numColumns || r>=numRows || (r>=0 && grid[c][r]>=0)) {
           valid = FALSE; break;
         }
       }
@@ -275,8 +275,8 @@ void switch_interrupt_handler(void) {
     }
   }
 
-  // SW3: reiniciar manual
-  if (switches & (1<<2)) {
+  // SW3: reinicio manual
+  if (switches & BIT2) {
     clearScreen(BG_COLOR);
     memset(grid, -1, sizeof grid);
     shapeIndex = shapeRotation = colIndex = 0;
@@ -286,7 +286,7 @@ void switch_interrupt_handler(void) {
   }
 
   // SW4: mover derecha
-  if (switches & (1<<3)) {
+  if (switches & BIT3) {
     short newCol = shapeCol + BLOCK_SIZE;
     int valid = TRUE;
     for (int i = 0; i < 4; i++) {
@@ -300,7 +300,7 @@ void switch_interrupt_handler(void) {
                (shapeRotation==3? -ox: oy)));
       int c = (newCol + rx*BLOCK_SIZE)/BLOCK_SIZE;
       int r = (shapeRow + ry*BLOCK_SIZE)/BLOCK_SIZE;
-      if (c >= numColumns || (r >= 0 && grid[c][r] >= 0)) {
+      if (c>=numColumns || (r>=0 && grid[c][r]>=0)) {
         valid = FALSE; break;
       }
     }
@@ -320,7 +320,7 @@ __interrupt_vec(PORT2_VECTOR) void Port_2(void) {
 // Bucle principal
 // --------------------------------------------------
 int main(void) {
-  P1DIR |= BIT6; P1OUT |= BIT6;
+  P1DIR |= BIT6; P1OUT |= BIT6;      // LED de debugging
   configureClocks();
   lcd_init();
   clearScreen(BG_COLOR);
@@ -331,14 +331,14 @@ int main(void) {
   shapeCol = 0;
   shapeRow = -BLOCK_SIZE*4;
   enableWDTInterrupts();
-  or_sr(0x8);
+  or_sr(0x8);  // entra en modo LPM0 con interrupciones habilitadas
   while (TRUE) {
     if (redrawScreen) {
       redrawScreen = FALSE;
       update_moving_shape();
     }
     P1OUT &= ~BIT6;
-    or_sr(0x10);
+    or_sr(0x10);  // LPM3
     P1OUT |= BIT6;
   }
   return 0;
