@@ -1,6 +1,7 @@
 #include <msp430.h>
 #include <libTimer.h>
 #include <string.h>
+#include <stdio.h>            // Para sprintf
 #include "lcdutils.h"
 #include "lcddraw.h"
 
@@ -13,13 +14,6 @@
 
 #define MAX_COLUMNS    (SCREEN_WIDTH  / BLOCK_SIZE)
 #define MAX_ROWS       (SCREEN_HEIGHT / BLOCK_SIZE)
-
-// --------------------------------------------------
-// Desplazamiento para spawn por debajo del texto SCORE
-// --------------------------------------------------
-#define TEXT_HEIGHT      7   // altura de la fuente 5x7
-#define SPAWN_OFFSET     10  // píxeles por debajo del texto
-#define SPAWN_Y_OFFSET   (TEXT_HEIGHT + SPAWN_OFFSET)
 
 // --------------------------------------------------
 // Formas Tetris (4 offsets cada una)
@@ -58,6 +52,9 @@ unsigned short shapeColors[NUM_SHAPES] = {
 };
 #define BG_COLOR      COLOR_BLACK
 
+// Puntuación
+static int score = 0;
+
 // --------------------------------------------------
 // Prototipos
 // --------------------------------------------------
@@ -67,14 +64,19 @@ static void clear_full_rows(void);
 static void draw_score_label(void);
 
 // --------------------------------------------------
-// Dibuja el texto "SCORE:" en la parte superior
+// Dibuja el texto "SCORE:0" en la parte inferior derecha
 // --------------------------------------------------
 static void draw_score_label(void) {
+  char buf[12];
+  sprintf(buf, "%d", score);
   const char *label = "SCORE:";
-  int len = strlen(label);
-  int x = SCREEN_WIDTH - len * 5;
-  int y = 0;
+  int len_label = strlen(label);
+  int len_num   = strlen(buf);
+  int total_w   = (len_label + len_num) * 5;  // ancho total en píxeles
+  int x = SCREEN_WIDTH - total_w;
+  int y = SCREEN_HEIGHT - 7;
   drawString5x7(x, y, (char *)label, COLOR_WHITE, BG_COLOR);
+  drawString5x7(x + len_label * 5, y, buf, COLOR_WHITE, BG_COLOR);
 }
 
 // --------------------------------------------------
@@ -120,16 +122,20 @@ static void clear_full_rows(void) {
       if (grid[c][r] < 0) { full = FALSE; break; }
     }
     if (full) {
+      score += 50;  // sumar 50 puntos por fila completa
+      // desplazar filas hacia abajo
       for (int rr = r; rr > 0; rr--) {
         for (int c = 0; c < numColumns; c++) {
           grid[c][rr] = grid[c][rr-1];
         }
       }
+      // limpiar fila 0
       for (int c = 0; c < numColumns; c++) grid[c][0] = -1;
+      // redibujar todo
       clearScreen(BG_COLOR);
       draw_grid();
       draw_score_label();
-      r--;  
+      r--;  // volver a verificar esta fila tras el desplazamiento
     }
   }
 }
@@ -208,10 +214,11 @@ void switch_interrupt_handler(void) {
   }
   // SW3: reiniciar manual
   if (switches & (1<<2)) {
+    score = 0;  // reiniciar puntuación
     clearScreen(BG_COLOR);
     memset(grid, -1, sizeof grid);
-    shapeIndex=shapeRotation=colIndex=0;
-    shapeCol=0; shapeRow = SPAWN_Y_OFFSET - BLOCK_SIZE*4;
+    shapeIndex = shapeRotation = colIndex = 0;
+    shapeCol = 0; shapeRow = -BLOCK_SIZE*4;
     draw_score_label();
   }
   // SW4: mover derecha
@@ -243,9 +250,9 @@ void __interrupt_vec(PORT2_VECTOR) Port_2(void) {
 // WDT: caída, apilamiento y game over
 // --------------------------------------------------
 void wdt_c_handler(void) {
-  static int tick=0;
-  if (++tick<64) return;
-  tick=0;
+  static int tick = 0;
+  if (++tick < 64) return;
+  tick = 0;
   short newRow = shapeRow + BLOCK_SIZE;
   int collided = FALSE;
   for (int i = 0; i < 4; i++) {
@@ -255,60 +262,56 @@ void wdt_c_handler(void) {
     int ry = (shapeRotation==1? ox: shapeRotation==2?-oy: shapeRotation==3?-ox:oy);
     int c = (shapeCol + rx*BLOCK_SIZE)/BLOCK_SIZE;
     int r = (newRow + ry*BLOCK_SIZE)/BLOCK_SIZE;
-    if (r>=numRows || (r>=0 && grid[c][r]>=0)) { collided=TRUE; break; }
+    if (r >= numRows || (r >= 0 && grid[c][r] >= 0)) { collided = TRUE; break; }
   }
   if (!collided) {
     shapeRow = newRow;
   } else {
     if (shapeRow < 0) {
-      // Game over, reinicio total
+      score = 0;  // reiniciar puntuación al game over
       clearScreen(BG_COLOR);
-      memset(grid,-1,sizeof grid);
-      shapeIndex=shapeRotation=colIndex=0;
-      shapeCol=0;
-      shapeRow = SPAWN_Y_OFFSET - BLOCK_SIZE*4;
+      memset(grid, -1, sizeof grid);
+      shapeIndex = shapeRotation = colIndex = 0;
+      shapeCol = 0; shapeRow = -BLOCK_SIZE*4;
       draw_score_label();
       return;
     }
-    // Fija la pieza
-    for (int i=0;i<4;i++){
-      int ox=shapes[shapeIndex][i].x;
-      int oy=shapes[shapeIndex][i].y;
-      int rx=(shapeRotation==1? -oy: shapeRotation==2?-ox: shapeRotation==3?oy:ox);
-      int ry=(shapeRotation==1? ox: shapeRotation==2?-oy: shapeRotation==3?-ox:oy);
-      int c=(shapeCol+rx*BLOCK_SIZE)/BLOCK_SIZE;
-      int r=(shapeRow+ry*BLOCK_SIZE)/BLOCK_SIZE;
-      if(r>=0&&r<numRows) grid[c][r]=shapeIndex;
+    // fijar pieza en la rejilla
+    for (int i = 0; i < 4; i++) {
+      int ox = shapes[shapeIndex][i].x;
+      int oy = shapes[shapeIndex][i].y;
+      int rx = (shapeRotation==1? -oy: shapeRotation==2?-ox: shapeRotation==3?oy:ox);
+      int ry = (shapeRotation==1? ox: shapeRotation==2?-oy: shapeRotation==3?-ox:oy);
+      int c = (shapeCol + rx*BLOCK_SIZE)/BLOCK_SIZE;
+      int r = (shapeRow + ry*BLOCK_SIZE)/BLOCK_SIZE;
+      if (r >= 0 && r < numRows) grid[c][r] = shapeIndex;
     }
     draw_grid();
     clear_full_rows();
-    pieceStoppedFlag=TRUE;
-    // Prepara siguiente pieza
-    shapeIndex=(shapeIndex+1)%NUM_SHAPES;
-    shapeRotation=0;
-    colIndex=(colIndex+1)%numColumns;
-    shapeCol=colIndex*BLOCK_SIZE;
-    shapeRow = SPAWN_Y_OFFSET - BLOCK_SIZE*4;
+    pieceStoppedFlag = TRUE;
+    shapeIndex = (shapeIndex + 1) % NUM_SHAPES;
+    shapeRotation = 0;
+    colIndex = (colIndex + 1) % numColumns;
+    shapeCol = colIndex * BLOCK_SIZE;
+    shapeRow = -BLOCK_SIZE * 4;
   }
-  redrawScreen=TRUE;
+  redrawScreen = TRUE;
 }
 
 // --------------------------------------------------
 // main
 // --------------------------------------------------
 int main(void) {
-  P1DIR|=BIT6; P1OUT|=BIT6;
+  P1DIR |= BIT6; P1OUT |= BIT6;
   configureClocks(); lcd_init();
   clearScreen(BG_COLOR);
   draw_score_label();
-  switch_init(); memset(grid,-1,sizeof grid);
-  shapeIndex=shapeRotation=colIndex=0;
-  shapeCol=0;
-  shapeRow = SPAWN_Y_OFFSET - BLOCK_SIZE*4;
+  switch_init(); memset(grid, -1, sizeof grid);
+  shapeIndex = shapeRotation = colIndex = 0;
+  shapeCol = 0; shapeRow = -BLOCK_SIZE*4;
   enableWDTInterrupts(); or_sr(0x8);
-  while(TRUE) {
-    if(redrawScreen) { redrawScreen=FALSE; update_moving_shape(); }
+  while (TRUE) {
+    if (redrawScreen) { redrawScreen = FALSE; update_moving_shape(); }
     P1OUT &= ~BIT6; or_sr(0x10); P1OUT |= BIT6;
   }
-  return 0;
 }
