@@ -1,6 +1,7 @@
 #include <msp430.h>
 #include <libTimer.h>
 #include <string.h>
+#include <stdio.h>       // para sprintf
 #include "lcdutils.h"
 #include "lcddraw.h"
 
@@ -46,6 +47,8 @@ static short lastCol = 0, lastRow = 0;
 static char  lastIdx  = -1;
 static char  lastRot  = 0;
 
+static int score = 0;             // puntaje actual
+
 unsigned short shapeColors[NUM_SHAPES] = {
   COLOR_RED, COLOR_GREEN, COLOR_ORANGE, COLOR_BLUE
 };
@@ -70,14 +73,12 @@ static void clear_full_rows(void);
 static void draw_score_label(void);
 
 // --------------------------------------------------
-// Dibuja el texto "SCORE:" en la parte inferior derecha
+// Dibuja el texto "SCORE:" y el valor en la esquina superior izquierda
 // --------------------------------------------------
 static void draw_score_label(void) {
-  const char *label = "SCORE:";
-  int len = strlen(label);
-  int x = SCREEN_WIDTH - len * 5;
-  int y = SCREEN_HEIGHT - 7;
-  drawString5x7(x, y, (char *)label, COLOR_WHITE, BG_COLOR);
+  char buf[16];
+  sprintf(buf, "SCORE:%d", score);
+  drawString5x7(0, 0, buf, COLOR_WHITE, BG_COLOR);
 }
 
 // --------------------------------------------------
@@ -118,7 +119,7 @@ static void draw_grid(void) {
 }
 
 // --------------------------------------------------
-// Elimina filas completas y recoloca las de arriba
+// Elimina filas completas, actualiza puntaje y recoloca las de arriba
 // --------------------------------------------------
 static void clear_full_rows(void) {
   for (int r = 0; r < numRows; r++) {
@@ -127,15 +128,20 @@ static void clear_full_rows(void) {
       if (grid[c][r] < 0) { full = FALSE; break; }
     }
     if (full) {
+      // línea completa: aumenta puntaje
+      score += 5;
+      // desplazar filas superiores hacia abajo
       for (int rr = r; rr > 0; rr--)
         for (int c = 0; c < numColumns; c++)
           grid[c][rr] = grid[c][rr-1];
+      // limpiar fila superior nueva
       for (int c = 0; c < numColumns; c++)
         grid[c][0] = -1;
+      // refrescar pantalla completa
       clearScreen(BG_COLOR);
       draw_grid();
       draw_score_label();
-      r--;
+      r--;  // reevalúa misma fila tras desplazamiento
     }
   }
 }
@@ -192,8 +198,7 @@ void switch_interrupt_handler(void) {
     short newCol = shapeCol - BLOCK_SIZE;
     int valid = TRUE;
     for (int i = 0; i < 4; i++) {
-      int ox = shapes[shapeIndex][i].x;
-      int oy = shapes[shapeIndex][i].y;
+      int ox = shapes[shapeIndex][i].x; int oy = shapes[shapeIndex][i].y;
       int rx = (shapeRotation==1?-oy:shapeRotation==2?-ox:shapeRotation==3?oy:ox);
       int ry = (shapeRotation==1?ox:shapeRotation==2?-oy:shapeRotation==3?-ox:oy);
       int c = (newCol + rx*BLOCK_SIZE)/BLOCK_SIZE;
@@ -205,13 +210,11 @@ void switch_interrupt_handler(void) {
 
   // SW2: rotar (pulsación corta)
   if ((switches & (1<<1)) && sw2HoldCount == 0) {
-    char newRot = (shapeRotation + 1) % 4;
-    int valid = TRUE;
+    char newRot = (shapeRotation + 1) % 4; int valid = TRUE;
     for (int i = 0; i < 4; i++) {
-      int ox = shapes[shapeIndex][i].x;
-      int oy = shapes[shapeIndex][i].y;
+      int ox = shapes[shapeIndex][i].x; int oy = shapes[shapeIndex][i].y;
       int rx = (newRot==1?-oy:newRot==2?-ox:newRot==3?oy:ox);
-      int ry = (newRot==1?ox:newRot==2?-oy: newRot==3?-ox:oy);
+      int ry = (newRot==1?ox:newRot==2?-oy:newRot==3?-ox:oy);
       int c = (shapeCol + rx*BLOCK_SIZE)/BLOCK_SIZE;
       int r = (shapeRow + ry*BLOCK_SIZE)/BLOCK_SIZE;
       if (c<0||c>=numColumns||r>=numRows||(r>=0&&grid[c][r]>=0)) { valid=FALSE; break; }
@@ -223,7 +226,9 @@ void switch_interrupt_handler(void) {
   if (switches & (1<<2)) {
     clearScreen(BG_COLOR);
     memset(grid, -1, sizeof grid);
-    shapeIndex = randState >> 16 % NUM_SHAPES; // inicio aleatorio
+    score = 0;                // resetear puntaje
+    randState = TA0R;
+    shapeIndex = (randState >> 16) % NUM_SHAPES;
     shapeRotation = colIndex = 0;
     shapeCol = 0; shapeRow = -BLOCK_SIZE*4;
     draw_score_label();
@@ -235,8 +240,7 @@ void switch_interrupt_handler(void) {
     short newCol = shapeCol + BLOCK_SIZE;
     int valid = TRUE;
     for (int i = 0; i < 4; i++) {
-      int ox = shapes[shapeIndex][i].x;
-      int oy = shapes[shapeIndex][i].y;
+      int ox = shapes[shapeIndex][i].x; int oy = shapes[shapeIndex][i].y;
       int rx = (shapeRotation==1?-oy:shapeRotation==2?-ox:shapeRotation==3?oy:ox);
       int ry = (shapeRotation==1?ox:shapeRotation==2?-oy:shapeRotation==3?-ox:oy);
       int c = (newCol + rx*BLOCK_SIZE)/BLOCK_SIZE;
@@ -267,13 +271,12 @@ void wdt_c_handler(void) {
   if (++tick < 64) return;
   tick = 0;
 
-  // Pulsación larga SW2
   if (!(P2IN & (1<<1))) {
     sw2HoldCount++;
     if (sw2HoldCount >= 3) {
       clearScreen(BG_COLOR);
       memset(grid, -1, sizeof grid);
-      // reinicia aleatorio
+      score = 0;
       randState = randState * 1103515245 + 12345;
       shapeIndex = (randState >> 16) % NUM_SHAPES;
       shapeRotation = colIndex = 0;
@@ -286,12 +289,10 @@ void wdt_c_handler(void) {
     sw2HoldCount = 0;
   }
 
-  // Caída normal
   short newRow = shapeRow + BLOCK_SIZE;
   int collided = FALSE;
   for (int i = 0; i < 4; i++) {
-    int ox = shapes[shapeIndex][i].x;
-    int oy = shapes[shapeIndex][i].y;
+    int ox = shapes[shapeIndex][i].x; int oy = shapes[shapeIndex][i].y;
     int rx = (shapeRotation==1?-oy:shapeRotation==2?-ox:shapeRotation==3?oy:ox);
     int ry = (shapeRotation==1?ox:shapeRotation==2?-oy:shapeRotation==3?-ox:oy);
     int c = (shapeCol + rx*BLOCK_SIZE)/BLOCK_SIZE;
@@ -302,9 +303,9 @@ void wdt_c_handler(void) {
     shapeRow = newRow;
   } else {
     if (shapeRow < 0) {
-      // Game over
       clearScreen(BG_COLOR);
       memset(grid, -1, sizeof grid);
+      score = 0;
       randState = TA0R;
       shapeIndex = (randState >> 16) % NUM_SHAPES;
       shapeRotation = colIndex = 0;
@@ -313,8 +314,7 @@ void wdt_c_handler(void) {
       return;
     }
     for (int i = 0; i < 4; i++) {
-      int ox = shapes[shapeIndex][i].x;
-      int oy = shapes[shapeIndex][i].y;
+      int ox = shapes[shapeIndex][i].x; int oy = shapes[shapeIndex][i].y;
       int rx = (shapeRotation==1?-oy:shapeRotation==2?-ox:shapeRotation==3?oy:ox);
       int ry = (shapeRotation==1?ox:shapeRotation==2?-oy:shapeRotation==3?-ox:oy);
       int c = (shapeCol + rx*BLOCK_SIZE)/BLOCK_SIZE;
@@ -324,8 +324,8 @@ void wdt_c_handler(void) {
     draw_grid();
     clear_full_rows();
     pieceStoppedFlag = TRUE;
-    lastIdx = -1; // evita borrar estático
-    // siguiente pieza aleatoria
+    lastIdx = -1;
+
     randState = randState * 1103515245 + 12345;
     shapeIndex = (randState >> 16) % NUM_SHAPES;
     shapeRotation = 0;
@@ -345,9 +345,9 @@ int main(void) {
   configureClocks();
   lcd_init();
   clearScreen(BG_COLOR);
+  score = 0;
   draw_score_label();
 
-  // semilla inicial: timer A0
   randState = TA0R;
   shapeIndex = (randState >> 16) % NUM_SHAPES;
 
