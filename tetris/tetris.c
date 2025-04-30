@@ -62,13 +62,17 @@ static void draw_grid(void);
 static void clear_full_rows(void);
 static void draw_score(void);
 
+// Funciones de botones (msquares.c)
+extern void switch_init(void);
+extern void switch_interrupt_handler(void);
+
 // --------------------------------------------------
 // Dibuja el marcador en la parte superior
 // --------------------------------------------------
 static void draw_score(void) {
   char buf[16];
   sprintf(buf, "SCORE:%d", score);
-  drawString5x7(0, 0, buf, TXT_COLOR);
+  drawString5x7(0, 0, buf, TXT_COLOR, BG_COLOR);
 }
 
 // --------------------------------------------------
