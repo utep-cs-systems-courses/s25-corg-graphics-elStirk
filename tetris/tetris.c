@@ -67,7 +67,7 @@ static void draw_score_label(void) {
   int len = strlen(label);
   int x = SCREEN_WIDTH - len * 5;
   int y = SCREEN_HEIGHT - 7;
-  drawString5x7(x, y, (char *)label, COLOR_WHITE, BG_COLOR);
+  drawString5x7(0, 0, (char *)label, COLOR_WHITE, BG_COLOR);
 }
 
 // --------------------------------------------------
