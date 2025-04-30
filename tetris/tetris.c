@@ -19,21 +19,21 @@ const Offset shapes[][4] = {
 // Columnas según anchura de pantalla
 static int numColumns;
 
-// Apilamiento de piezas fijas
+// Apilamiento de piezas fijas (aunque sólo guardamos el “ancla” de cada pieza)
 typedef struct { short col, row; char idx; } Placed;
 #define MAX_PLACED 30
 static Placed placed[MAX_PLACED];
 static int placedCount = 0;
 
-// Estado de la pieza en caída
+// Flags y estado global
 enum { FALSE = 0, TRUE = 1 };
-volatile int redrawScreen = TRUE;      // para el main loop
-volatile int pieceStoppedFlag = FALSE; // indica que acaba de fijarse una pieza
+volatile int redrawScreen     = TRUE;      // para indicar al main loop que dibuje
+volatile int pieceStoppedFlag = FALSE;     // para no borrar la pieza fija
 
 static short shapeCol, shapeRow;
-static char shapeIndex = 0, colIndex = 0;
+static char  shapeIndex = 0, colIndex = 0;
 
-// Para el borrado selectivo en update_moving_shape
+// Última posición/dibujo móvil para borrado selectivo
 static short lastCol = 0, lastRow = 0;
 static char  lastIdx = -1;
 
@@ -43,7 +43,7 @@ unsigned short shapeColors[NUM_SHAPES] = {
 };
 #define BG_COLOR COLOR_BLACK
 
-// Dibuja una forma completa en (col,row)
+// Dibuja una forma completa en (col,row) con el color dado
 static void draw_piece(short col, short row, char idx, unsigned short color) {
   for (int i = 0; i < 4; i++) {
     int x = col + shapes[idx][i].x * BLOCK_SIZE;
@@ -52,32 +52,32 @@ static void draw_piece(short col, short row, char idx, unsigned short color) {
   }
 }
 
-// Actualiza sólo la pieza móvil, borrando la anterior si no acabo de fijarse
+// Solo borra la pieza anterior si NO acabamos de fijarla
 static void update_moving_shape(void) {
-  // Si había una pieza anterior y no ha sido fijada justo ahora, la borramos
   if (lastIdx >= 0 && !pieceStoppedFlag) {
+    // Borra la pieza móvil previa
     draw_piece(lastCol, lastRow, lastIdx, BG_COLOR);
   }
-  // Dibujamos la forma actual
+  // Dibuja la pieza en su nueva posición
   draw_piece(shapeCol, shapeRow, shapeIndex, shapeColors[shapeIndex]);
-  // Guardamos para el próximo ciclo
+  // Guarda para el próximo ciclo
   lastCol = shapeCol;
   lastRow = shapeRow;
   lastIdx = shapeIndex;
-  // Reseteamos la bandera para próximos ciclos
+  // Resetea la bandera
   pieceStoppedFlag = FALSE;
 }
 
-// WDT ISR: hace caer la pieza y la apila si colisiona
+// WDT ISR: controla caída, detección de colisión y apilamiento
 void wdt_c_handler() {
   static int tick = 0;
-  if (++tick < 64) return;  // controla velocidad
+  if (++tick < 64) return;  // controla velocidad (~512Hz/64)
   tick = 0;
 
-  // Mover pieza hacia abajo
+  // Mueve la pieza hacia abajo
   shapeRow += BLOCK_SIZE;
 
-  // Detectar colisión con suelo o pieza fija
+  // Comprueba colisión con suelo o con piezas ya fijas
   int collided = FALSE;
   if (shapeRow + BLOCK_SIZE > screenHeight - 1) {
     collided = TRUE;
@@ -91,57 +91,58 @@ void wdt_c_handler() {
   }
 
   if (collided) {
-    // Ajustar posición encima de colisión
+    // Retrocede la pieza un paso
     shapeRow -= BLOCK_SIZE;
-    // Guardar pieza fija y dibujarla
+    // Guarda y dibuja la pieza fija
     if (placedCount < MAX_PLACED) {
       placed[placedCount++] = (Placed){ shapeCol, shapeRow, shapeIndex };
       draw_piece(shapeCol, shapeRow, shapeIndex, shapeColors[shapeIndex]);
     }
-    // Indicamos que justo fijamos una pieza
+    // Indica que acabo de fijar para que no se borre
     pieceStoppedFlag = TRUE;
 
-    // Generar nueva pieza a la derecha
+    // Genera nueva pieza en la siguiente columna
     shapeIndex = (shapeIndex + 1) % NUM_SHAPES;
     colIndex   = (colIndex + 1) % numColumns;
     shapeCol   = colIndex * BLOCK_SIZE;
     shapeRow   = -BLOCK_SIZE * 4;
   }
 
-  // Señalamos al bucle principal que debe redibujar
+  // Señala al main loop que redibuje
   redrawScreen = TRUE;
 }
 
 int main() {
-  // Inicialización hardware
+  // Inicialización de hardware
   P1DIR |= BIT6; P1OUT |= BIT6;  // LED en P1.6
   configureClocks();
   lcd_init();
   clearScreen(BG_COLOR);
 
-  // Columnas disponibles
+  // Calcula cuántas columnas caben
   numColumns = screenWidth / BLOCK_SIZE;
 
-  // Pieza inicial
+  // Estado inicial de la pieza móvil
   shapeIndex = 0;
   colIndex   = 0;
   shapeCol   = 0;
   shapeRow   = -BLOCK_SIZE * 4;
 
-  // Activar WDT e interrupciones
+  // Activa WDT e interrupciones
   enableWDTInterrupts();
   or_sr(0x8);
 
-  // Bucle principal: solo actualiza pieza móvil
+  // Bucle principal: solo redibuja la pieza móvil
   while (TRUE) {
     if (redrawScreen) {
       redrawScreen = FALSE;
       update_moving_shape();
     }
-    // CPU OFF entre ISR
+    // Entra en modo de bajo consumo hasta la próxima ISR
     P1OUT &= ~BIT6;
     or_sr(0x10);
     P1OUT |= BIT6;
   }
 }
+
 
