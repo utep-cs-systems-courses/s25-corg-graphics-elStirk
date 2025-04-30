@@ -41,14 +41,8 @@ static void draw_cell(int cx, int cy, unsigned short color) {
 }
 
 // Actualiza sólo la pieza móvil sin limpiar todo el LCD
-static void update_piece(void) {(int cx, int cy, unsigned short color) {
-  fillRectangle(cx*BLOCK_SIZE, cy*BLOCK_SIZE,
-                BLOCK_SIZE, BLOCK_SIZE, color);
-  grid[cx][cy] = color;
-}
-
-// Actualiza sólo la pieza móvil sin limpiar todo el LCD\static void update_piece(void) {
-  static int last[4][2] = {{-1,-1}};
+static void update_piece(void) {
+  static int last[4][2] = {{-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}};
   int cur[4][2];
   int idx = shapeI;
 
@@ -84,13 +78,13 @@ static void update_piece(void) {(int cx, int cy, unsigned short color) {
 // Watchdog Timer ISR: hace caer la pieza y la fija al colisionar
 void wdt_c_handler() {
   static int tick;
-  if (++tick < 64) return;  // controla velocidad
+  if (++tick < 64) return;  // controla velocidad (~512Hz/64)
   tick = 0;
 
   // Avanzar pieza en Y (celdas)
   posY++;
 
-  // Detectar colisión: fondo o bloque fijo
+  // Detectar colisión con fondo o bloque fijo
   int hit = 0;
   for (int i = 0; i < 4; i++) {
     int cx = posX + shapes[shapeI][i].x;
@@ -104,7 +98,7 @@ void wdt_c_handler() {
   if (hit) {
     // Retroceder un paso
     posY--;
-    // Fijar cada bloque en la grilla
+    // Fijar cada bloque en la grilla y dibujar
     for (int i = 0; i < 4; i++) {
       int cx = posX + shapes[shapeI][i].x;
       int cy = posY + shapes[shapeI][i].y;
@@ -122,7 +116,7 @@ void wdt_c_handler() {
   redrawFlag = 1;
 }
 
-int main() {
+int main(void) {
   // Inicializar grilla a fondo
   for (int x = 0; x < COLS; x++)
     for (int y = 0; y < ROWS; y++)
@@ -150,9 +144,10 @@ int main() {
       redrawFlag = 0;
       update_piece();
     }
-    // Low-power mode hasta la próxima ISR
+    // Modo bajo consumo hasta la próxima ISR
     P1OUT &= ~BIT6;
     or_sr(0x10);
     P1OUT |= BIT6;
   }
 }
+
