@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include "lcdutils.h"
 #include "lcddraw.h"
-#include "font-5x7.c"
+#include "../lcdLib/font-5x7.c"
 
 // --------------------------------------------------
 // Configuración de pantalla, rejilla y puntuación
@@ -190,4 +190,3 @@ int main() {
     P1OUT |= BIT6;
   }
 }
-
