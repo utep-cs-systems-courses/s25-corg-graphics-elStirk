@@ -1,249 +1,127 @@
-/* tetris.c - Simple Tetris-style mini-game for MSP430 using lcdLib */
-
 #include <msp430.h>
 #include <libTimer.h>
 #include "lcdutils.h"
 #include "lcddraw.h"
-#include <stdint.h>
-// Grid dimensions (LCD 96x64, using 6x6 pixel blocks)
-#define GRID_COLS 10  // 32 / 6 = 16 columns
-#define GRID_ROWS 16  // 20 / 6 = 10 rows
-#define BLOCK_SIZE 6
 
-// Switches on P2.0 = left, P2.1 = rotate
-#define SWITCHES  (BIT0 | BIT1 | BIT3)
+// Tamaño de cada bloque (en píxeles)
+#define BLOCK_SIZE 10
 
-// Game grid: 0 = empty, 1 = filled
-uint8_t grid[GRID_ROWS][GRID_COLS];
+// Definición de formas (4 bloques cada una)
+typedef struct { short x, y; } Offset;
 
-// Current piece state
-int currentPiece;
-int rotation;
-int posX, posY;
-int tickCount;
-int redrawScreen = 0;  // flag for WDT handler
+const Offset shapes[][4] = {
+  // Cuadrado
+  { {0,0}, {1,0}, {0,1}, {1,1} },
+  // Línea horizontal
+  { {0,0}, {1,0}, {2,0}, {3,0} },
+  // L invertida
+  { {0,0}, {0,1}, {1,1}, {2,1} },
+  // T
+  { {1,0}, {0,1}, {1,1}, {2,1} }
+};
+#define NUM_SHAPES (sizeof(shapes)/sizeof(shapes[0]))
 
-// Block position within a tetromino
-typedef struct { int8_t x, y; } BlockPos;
-// Tetromino definition: 4 rotations, each with 4 blocks
-typedef struct {
-  BlockPos blocks[4][4];
-  uint16_t color;
-} Tetromino;
+// Posiciones verticales predefinidas (reutilizando posiciones del ejemplo)
+typedef struct { short col, row; } Pos;
+Pos positions[] = {
+  {10, 10},
+  {10, screenHeight - 10},
+  {screenWidth - 10, screenHeight - 10},
+  {screenWidth - 10, 10},
+  {screenWidth/2, screenHeight/2}
+};
+#define NUM_POSITIONS (sizeof(positions)/sizeof(positions[0]))
 
-// Two simple pieces: O (square) and I (line)
-const Tetromino pieces[2] = {
-  // O piece (square)
-  { { {{0,0},{1,0},{0,1},{1,1}},
-      {{0,0},{1,0},{0,1},{1,1}},
-      {{0,0},{1,0},{0,1},{1,1}},
-      {{0,0},{1,0},{0,1},{1,1}} },
-    COLOR_YELLOW },
-  // I piece (vertical/horizontal)
-  { { {{0,-1},{0,0},{0,1},{0,2}},
-      {{-1,0},{0,0},{1,0},{2,0}},
-      {{0,-1},{0,0},{0,1},{0,2}},
-      {{-1,0},{0,0},{1,0},{2,0}} },
-    COLOR_CYAN }
+// Variables de estado compartidas
+static int redrawScreen = 1;
+static short shapeCol, shapeRow;
+static char shapeIndex = 0, rowIndex = 0;
+
+// Colores para cada forma
+unsigned short shapeColors[NUM_SHAPES] = {
+  COLOR_RED,
+  COLOR_GREEN,
+  COLOR_ORANGE,
+  COLOR_BLUE
 };
 
-// Draw or clear a single block cell
-void drawBlock(int x, int y, uint16_t color) {
-  fillRectangle(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE, color);
-}
-void clearBlock(int x, int y) {
-  fillRectangle(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE, COLOR_BLACK);
-}
+#define BG_COLOR COLOR_BLACK
 
-// Llama a esto en cuanto detectes spawn colisionando (fila 0)
-void resetGame() {
-  for (int r = 0; r < GRID_ROWS; r++)
-    for (int c = 0; c < GRID_COLS; c++)
-      grid[r][c] = 0;
+// Actualiza dibujo: borra la forma anterior y dibuja la nueva
+void update_shape() {
+  static short lastCol = -1, lastRow = -1;
+  static char  lastShape = -1;
+  // Leer variables de forma atómica
+  and_sr(~8);
+  short col = shapeCol;
+  short row = shapeRow;
+  char  idx = shapeIndex;
+  or_sr(8);
 
-  clearScreen(COLOR_BLACK);
-  tickCount = 0;
-}
-// Draw/clear current tetromino at (x,y)
-void drawPiece(int p, int rot, int x, int y) {
-  for (int i = 0; i < 4; i++) {
-    int px = x + pieces[p].blocks[rot][i].x;
-    int py = y + pieces[p].blocks[rot][i].y;
-    if (py >= 0 && py < GRID_ROWS && px >= 0 && px < GRID_COLS)
-      drawBlock(px, py, pieces[p].color);
+  // Si no cambió nada, no dibujamos
+  if (col == lastCol && row == lastRow && idx == lastShape) return;
+
+  // Borrar forma anterior (área suficientemente grande)
+  if (lastCol >= 0) {
+    fillRectangle(lastCol,
+                  lastRow,
+                  BLOCK_SIZE * 4,
+                  BLOCK_SIZE * 4,
+                  BG_COLOR);
   }
-}
-void clearPiece(int p, int rot, int x, int y) {
+
+  // Dibujar nueva forma
   for (int i = 0; i < 4; i++) {
-    int px = x + pieces[p].blocks[rot][i].x;
-    int py = y + pieces[p].blocks[rot][i].y;
-    if (py >= 0 && py < GRID_ROWS && px >= 0 && px < GRID_COLS)
-      clearBlock(px, py);
+    int x = col + shapes[idx][i].x * BLOCK_SIZE;
+    int y = row + shapes[idx][i].y * BLOCK_SIZE;
+    fillRectangle(x, y, BLOCK_SIZE, BLOCK_SIZE, shapeColors[idx]);
   }
+
+  lastCol   = col;
+  lastRow   = row;
+  lastShape = idx;
 }
 
-// Check collision: returns 1 if colliding
-int checkCollision(int p, int rot, int x, int y) {
-  for (int i = 0; i < 4; i++) {
-    int px = x + pieces[p].blocks[rot][i].x;
-    int py = y + pieces[p].blocks[rot][i].y;
-    if (px < 0 || px >= GRID_COLS || py >= GRID_ROWS) return 1;
-    if (py >= 0 && grid[py][px]) return 1;
-  }
-  return 0;
-}
-// Fix piece into the grid
-// void fixPiece() {
-//   for (int i = 0; i < 4; i++) {
-//     int px = posX + pieces[currentPiece].blocks[rotation][i].x;
-//     int py = posY + pieces[currentPiece].blocks[rotation][i].y;
-//     if (py >= 0 && py < GRID_ROWS && px >= 0 && px < GRID_COLS)
-//       grid[py][px] = 1;
-//   }
-// }
-void fixPiece() {
-  for (int i = 0; i < 4; i++) {
-    int px = posX + pieces[currentPiece].blocks[rotation][i].x;
-    int py = posY + pieces[currentPiece].blocks[rotation][i].y;
-    if (py >= 0 && py < GRID_ROWS && px >= 0 && px < GRID_COLS) {
-      grid[py][px] = 1;
-      // draw the “permanent” block in its color:
-      drawBlock(px, py, pieces[currentPiece].color);
-    }
-  }
-}
-
-// // Spawn a new piece
-// void newPiece() {
-//   currentPiece = (tickCount / 20) % 2;  // alternate between pieces
-//   rotation = 0;
-//   posX = GRID_COLS / 2;
-//   posY = 0;
-//   if (checkCollision(currentPiece, rotation, posX, posY)) {
-//     // Game over: clear grid
-//     for (int r = 0; r < GRID_ROWS; r++)
-//       for (int c = 0; c < GRID_COLS; c++)
-// 	grid[r][c] = 0;
-//   }
-// }
-// Sólo posiciona la pieza al nacer. NO limpiamos aquí la matriz.
-void newPiece() {
-  currentPiece = (tickCount / 20) % 2;
-  rotation     = 0;
-  posX         = GRID_COLS / 2;
-  posY         = 0;
-
-  // ¡Elimina este bloque!  
-  // if (checkCollision(currentPiece, rotation, posX, posY)) {
-  //   // YA lo hará resetGame() en el handler, así que aquí no limpiamos.
-  // }
-}
-
-// WDT interrupt: drop and redraw
-// void wdt_c_handler() {
-//   tickCount++;
-//   redrawScreen = 1;
-//   if (tickCount % 20 == 0) {
-//     clearPiece(currentPiece, rotation, posX, posY);
-//     if (!checkCollision(currentPiece, rotation, posX, posY + 1)) {
-//       posY++;
-//     } else {
-//       fixPiece();
-//       newPiece();
-//     }
-//     drawPiece(currentPiece, rotation, posX, posY);
-//   }
-// }
+// WDT: mueve la pieza horizontalmente de derecha a izquierda
 void wdt_c_handler() {
-  tickCount++;
+  static int tick = 0;
+  if (++tick < 64) return;  // ajuste de velocidad
+  tick = 0;
+
+  shapeCol -= BLOCK_SIZE;
+  if (shapeCol < -BLOCK_SIZE * 4) {
+    // Generar nueva pieza al llegar al borde izquierdo
+    shapeIndex = (shapeIndex + 1) % NUM_SHAPES;
+    rowIndex   = (rowIndex   + 1) % NUM_POSITIONS;
+    shapeCol   = screenWidth;
+    shapeRow   = positions[rowIndex].row;
+  }
   redrawScreen = 1;
-
-  if (tickCount % 20 == 0) {
-    clearPiece(currentPiece, rotation, posX, posY);
-
-    if (!checkCollision(currentPiece, rotation, posX, posY + 1)) {
-      posY++;
-    } else {
-      // Sólo aquí consideramos game-over si la pieza ni siquiera pudo bajar.
-      if (posY <= 0) {
-        resetGame();    // borra todo UNA vez
-      } else {
-        fixPiece();     // fija y pinta la pieza en el tablero
-      }
-      newPiece();       // genera la siguiente pieza limpia
-    }
-
-    drawPiece(currentPiece, rotation, posX, posY);
-  }
 }
-// Switch (button) handling
-static char switch_update_interrupt_sense() {
-  char p2val = P2IN;
-  P2IES |= (p2val & SWITCHES);
-  P2IES &= (p2val | ~SWITCHES);
-  return p2val;
-}
-void switch_init() {
-  P2REN |= SWITCHES;
-  P2OUT |= SWITCHES;
-  P2DIR &= ~SWITCHES;
-  P2IE  |= SWITCHES;
-}
-// void switch_interrupt_handler() {
-//   char p2val = switch_update_interrupt_sense();
-//   if (!(p2val & BIT0)) {  // Left button
-//     clearPiece(currentPiece, rotation, posX, posY);
-//     if (!checkCollision(currentPiece, rotation, posX - 1, posY)) posX--;
-//     drawPiece(currentPiece, rotation, posX, posY);
-//   }
-//   if (!(p2val & BIT1)) {  // Rotate button
-//     clearPiece(currentPiece, rotation, posX, posY);
-//     int nr = (rotation + 1) & 3;
-//     if (!checkCollision(currentPiece, nr, posX, posY)) rotation = nr;
-//     drawPiece(currentPiece, rotation, posX, posY);
-//   }
-//   P2IFG &= ~SWITCHES;
-// }
-void switch_interrupt_handler() {
-  char p2val = switch_update_interrupt_sense();
 
-  if (!(p2val & BIT0)) {            // Left button
-    clearPiece(currentPiece, rotation, posX, posY);
-    if (!checkCollision(currentPiece, rotation, posX - 1, posY))
-      posX--;
-    drawPiece(currentPiece, rotation, posX, posY);
-  }
-  if (!(p2val & BIT1)) {            // Rotate button
-    clearPiece(currentPiece, rotation, posX, posY);
-    int nr = (rotation + 1) & 3;
-    if (!checkCollision(currentPiece, nr, posX, posY))
-      rotation = nr;
-    drawPiece(currentPiece, rotation, posX, posY);
-  }
-  if (!(p2val & BIT3)) {            // Right button (4th)
-    clearScreen(COLOR_BLACK);
-  }
-
-  P2IFG &= ~SWITCHES;               // clear all flags
-}
-// Main entry point
 int main() {
-  configureClocks();      // from libTimer
+  // Inicialización básica
+  P1DIR |= BIT6;    // LED en P1.6
+  P1OUT |= BIT6;    // LED encendido
+  configureClocks();
   lcd_init();
-  clearScreen(COLOR_BLACK);
-  switch_init();
-  enableWDTInterrupts();
-  or_sr(0x8);
+  clearScreen(BG_COLOR);
 
-  newPiece();
-  drawPiece(currentPiece, rotation, posX, posY);
+  // Estado inicial de la pieza
+  shapeCol = screenWidth;
+  shapeRow = positions[0].row;
+
+  enableWDTInterrupts();  // WDT periódico
+  or_sr(0x8);             // interrupciones globales ON
 
   while (1) {
     if (redrawScreen) {
       redrawScreen = 0;
-      // You can implement row clearing here
+      update_shape();
     }
-    or_sr(0x10);  // CPU off, enable interrupts
+    // Modo bajo consumo hasta próxima interrupción
+    P1OUT &= ~BIT6;
+    or_sr(0x10);
+    P1OUT |= BIT6;
   }
-  return 0;
 }
