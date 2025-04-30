@@ -48,6 +48,9 @@ unsigned short shapeColors[NUM_SHAPES] = {
 };
 #define BG_COLOR      COLOR_BLACK
 
+// Prototipo de función para evitar declaraciones implícitas
+static void draw_piece(short col, short row, char idx, unsigned short color);
+
 // --------------------------------------------------
 // Botones (ejemplo extraído de msquares.c)
 // --------------------------------------------------
@@ -140,6 +143,9 @@ void __interrupt_vec(PORT2_VECTOR) Port_2() {
   }
 }
 
+// --------------------------------------------------
+// Dibuja una pieza en (col,row) con el color indicado
+// --------------------------------------------------
 static void draw_piece(short col, short row, char idx, unsigned short color) {
   for (int i = 0; i < 4; i++) {
     int x = col + shapes[idx][i].x * BLOCK_SIZE;
@@ -148,6 +154,9 @@ static void draw_piece(short col, short row, char idx, unsigned short color) {
   }
 }
 
+// --------------------------------------------------
+// Refresca sólo la pieza móvil, borrando la anterior
+// --------------------------------------------------
 static void update_moving_shape(void) {
   if (lastIdx >= 0 && !pieceStoppedFlag) {
     draw_piece(lastCol, lastRow, lastIdx, BG_COLOR);
