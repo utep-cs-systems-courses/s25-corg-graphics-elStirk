@@ -92,7 +92,6 @@ void switch_interrupt_handler() {
     for (int i = 0; i < 4; i++) {
       int ox = shapes[shapeIndex][i].x;
       int oy = shapes[shapeIndex][i].y;
-      // aplicar rotación
       int rx, ry;
       switch(shapeRotation) {
         case 0: rx = ox;  ry = oy;  break;
@@ -132,8 +131,12 @@ void switch_interrupt_handler() {
     if (canMove) { shapeCol = newCol; redrawScreen = TRUE; }
   }
 
-  /* SW3: rotar pieza */
+  /* SW3: rotar pieza / DEBUG: cambiar color */
   if (switches & (1<<2)) {
+    // DEBUG: cambiar color para probar botón
+    shapeColors[shapeIndex] = COLOR_WHITE;
+    redrawScreen = TRUE;
+
     char newRot = (shapeRotation + 1) % 4;
     int canRotate = TRUE;
     for (int i = 0; i < 4; i++) {
@@ -265,8 +268,8 @@ void wdt_c_handler() {
     }
     draw_piece(shapeCol, shapeRow, shapeIndex, shapeRotation, shapeColors[shapeIndex]);
     pieceStoppedFlag = TRUE;
-    shapeIndex    = (shapeIndex + 1) % NUM_SHAPES;  // siguiente pieza
-    shapeRotation = 0;  // reset rotación
+    shapeIndex    = (shapeIndex + 1) % NUM_SHAPES;
+    shapeRotation = 0;
     colIndex      = (colIndex + 1) % numColumns;
     shapeCol      = colIndex * BLOCK_SIZE;
     shapeRow      = -BLOCK_SIZE * 4;
