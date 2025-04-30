@@ -45,6 +45,7 @@ static char  colIndex      = 0;
 static short lastCol = 0, lastRow = 0;
 static char  lastIdx  = -1;
 static char  lastRot  = 0;
+static unsigned int rand_state = 12345; // semilla inicial cualquiera
 
 unsigned short shapeColors[NUM_SHAPES] = {
   COLOR_RED, COLOR_GREEN, COLOR_ORANGE, COLOR_BLUE
@@ -87,6 +88,11 @@ static void draw_grid(void) {
       }
     }
   }
+}
+
+unsigned int simple_rand(unsigned int max) {
+    rand_state = rand_state * 1103515245 + 12345;
+    return (rand_state >> 16) % max;
 }
 
 // --------------------------------------------------
@@ -246,8 +252,10 @@ void wdt_c_handler() {
     if (shapeRow < -BLOCK_SIZE*2) {
       clearScreen(BG_COLOR);
       memset(grid, -1, sizeof grid);
-      shapeIndex = shapeRotation = colIndex = 0;
-      shapeCol = 0; shapeRow = -BLOCK_SIZE*4;
+      shapeIndex = simple_rand(NUM_SHAPES);
+      shapeRotation = 0;
+      shapeCol = ((numColumns / 2) - 1) * BLOCK_SIZE; // columna central
+      shapeRow = -BLOCK_SIZE * 4;
       return;
     }
     // fijar pieza en rejilla
@@ -262,11 +270,10 @@ void wdt_c_handler() {
     draw_grid();
     clear_full_rows();
     pieceStoppedFlag = TRUE;
-    shapeIndex = (shapeIndex+1) % NUM_SHAPES;
+    shapeIndex = simple_rand(NUM_SHAPES);
     shapeRotation = 0;
-    colIndex = (colIndex+1) % numColumns;
-    shapeCol = colIndex*BLOCK_SIZE;
-    shapeRow = -BLOCK_SIZE*4;
+    shapeCol = ((numColumns / 2) - 1) * BLOCK_SIZE; // columna central
+    shapeRow = -BLOCK_SIZE * 4;
   }
   redrawScreen = TRUE;
 }
@@ -275,11 +282,14 @@ void wdt_c_handler() {
 // main
 // --------------------------------------------------
 int main() {
+  rand_state = TA0R;
   P1DIR |= BIT6; P1OUT |= BIT6;
   configureClocks(); lcd_init(); clearScreen(BG_COLOR);
   switch_init(); memset(grid, -1, sizeof grid);
-  shapeIndex = shapeRotation = colIndex = 0;
-  shapeCol = 0; shapeRow = -BLOCK_SIZE*4;
+  shapeIndex = simple_rand(NUM_SHAPES);
+  shapeRotation = 0;
+  shapeCol = ((numColumns / 2) - 1) * BLOCK_SIZE; // columna central
+  shapeRow = -BLOCK_SIZE * 4;
   enableWDTInterrupts(); or_sr(0x8);
   while (TRUE) {
     if (redrawScreen) { redrawScreen = FALSE; update_moving_shape(); }
