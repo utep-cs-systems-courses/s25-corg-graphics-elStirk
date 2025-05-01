@@ -40,7 +40,6 @@ volatile int pieceStoppedFlag = FALSE;
 static short shapeCol, shapeRow;
 static char  shapeIndex    = 0;
 static char  shapeRotation = 0;
-static char  colIndex      = 0;
 
 static short lastCol = 0, lastRow = 0;
 static char  lastIdx  = -1;
@@ -71,6 +70,9 @@ static void draw_grid(void);
 static void clear_full_rows(void);
 static void draw_score_label(void);
 static void itoa_simple(int val, char *buf);
+// helpers para rotación
+static int rotatedX(char idx, char rot, int i);
+static int rotatedY(char idx, char rot, int i);
 
 // --------------------------------------------------
 // Convierte entero a texto simple (base 10)
@@ -94,7 +96,6 @@ static void itoa_simple(int val, char *buf) {
 // Dibuja el texto "SCORE:" y el valor en la esquina superior izquierda
 // --------------------------------------------------
 static void draw_score_label(void) {
-  // limpia área superior para evitar ghosting
   fillRectangle(0, 0, SCREEN_WIDTH, 8, BG_COLOR);
   char buf[6];
   itoa_simple(score, buf);
@@ -111,16 +112,39 @@ static void draw_piece(short col, short row, char idx, char rot, unsigned short 
     int oy = shapes[idx][i].y;
     int rx, ry;
     switch(rot) {
-      case 0: rx = ox;  ry = oy;  break;
       case 1: rx = -oy; ry = ox;  break;
       case 2: rx = -ox; ry = -oy; break;
       case 3: rx = oy;  ry = -ox; break;
-      default: rx = ox; ry = oy; break;
+      default: rx = ox;  ry = oy;  break;
     }
     fillRectangle(col + rx*BLOCK_SIZE,
                   row + ry*BLOCK_SIZE,
                   BLOCK_SIZE, BLOCK_SIZE,
                   color);
+  }
+}
+
+// --------------------------------------------------
+// Helpers para calcular rotaciones sin duplicar código
+// --------------------------------------------------
+static int rotatedX(char idx, char rot, int i) {
+  int ox = shapes[idx][i].x;
+  int oy = shapes[idx][i].y;
+  switch(rot) {
+    case 1: return -oy;
+    case 2: return -ox;
+    case 3: return oy;
+    default: return ox;
+  }
+}
+static int rotatedY(char idx, char rot, int i) {
+  int ox = shapes[idx][i].x;
+  int oy = shapes[idx][i].y;
+  switch(rot) {
+    case 1: return ox;
+    case 2: return -oy;
+    case 3: return -ox;
+    default: return oy;
   }
 }
 
@@ -160,25 +184,40 @@ static void clear_full_rows(void) {
       clearScreen(BG_COLOR);
       draw_grid();
       draw_score_label();
-      r--;  
+      r--;
     }
   }
 }
 
 // --------------------------------------------------
-// Actualiza la pieza móvil
+// Actualiza la pieza móvil (borrando y repintando estáticos)
 // --------------------------------------------------
 static void update_moving_shape(void) {
   if (lastIdx >= 0) {
+    // 1) Borrar la pieza antigua
     draw_piece(lastCol, lastRow, lastIdx, lastRot, BG_COLOR);
+    // 2) Repintar cualquier bloque estático que estuviera debajo
+    for (int i = 0; i < 4; i++) {
+      int c = (lastCol + rotatedX(lastIdx, lastRot, i)*BLOCK_SIZE) / BLOCK_SIZE;
+      int r = (lastRow + rotatedY(lastIdx, lastRot, i)*BLOCK_SIZE) / BLOCK_SIZE;
+      if (r >= 0 && c >= 0 && c < numColumns && r < numRows && grid[c][r] >= 0) {
+        fillRectangle(c*BLOCK_SIZE,
+                      r*BLOCK_SIZE,
+                      BLOCK_SIZE, BLOCK_SIZE,
+                      shapeColors[ grid[c][r] ]);
+      }
+    }
   }
+  // 3) Dibujar la pieza en su nueva posición
   draw_piece(shapeCol, shapeRow, shapeIndex, shapeRotation,
              shapeColors[shapeIndex]);
+
   lastCol = shapeCol;
   lastRow = shapeRow;
   lastIdx = shapeIndex;
   lastRot = shapeRotation;
 }
+
 
 // --------------------------------------------------
 // Botones con debounce e interrupciones
