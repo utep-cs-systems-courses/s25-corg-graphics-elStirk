@@ -218,6 +218,7 @@ static void refillBag(void) {
 // Actualiza la pieza móvil (borrado + repintado estáticos)
 // --------------------------------------------------
 static void update_moving_shape(void) {
+  draw_score_label();
   if (lastIdx >= 0) {
     // Borrar la figura anterior y restaurar fondo o bloques estáticos
     for (int i = 0; i < 4; i++) {
