@@ -33,8 +33,9 @@ const Offset shapes[][4] = {
 #define BAG_SIZE   (NUM_SHAPES * BAG_MULT)
 static unsigned char bag[BAG_SIZE];
 static int bagPos = BAG_SIZE;  // fuerza refill inicial
-static int frameCount = 0;
+static int tickCount = 0;
 static int secondsElapsed = 0;
+static int speedTickMax = 4;  // 4 ticks = 200ms entre caídas (20Hz / 4 = 5 caídas por segundo)
 
 // --------------------------------------------------
 // Variables globales
@@ -340,26 +341,23 @@ void __interrupt_vec(PORT2_VECTOR) Port_2(void) {
 // WDT: caída, colisiones, bolsa y pulsación larga SW2
 // --------------------------------------------------
 void wdt_c_handler(void) {
-  static int tick = 0;
-  static int speedTickMax = 64;
-
-  frameCount++;
-  if (frameCount >= 64) {
-    frameCount = 0;
+  tickCount++;
+  if (tickCount % 20 == 0) {  // 20 ticks = 1 segundo
     secondsElapsed++;
     draw_score_label();
   }
 
-  // Ajustar velocidad según tiempo
+  // Ajustar la velocidad según segundos transcurridos
   if (secondsElapsed >= 10)
-    speedTickMax = 24;
+    speedTickMax = 1;  // 1 tick = 50ms (20Hz) → 20 caídas por segundo
   else if (secondsElapsed >= 5)
-    speedTickMax = 32;
+    speedTickMax = 2;  // 2 ticks = 100ms → 10 caídas por segundo
   else
-    speedTickMax = 64;
+    speedTickMax = 4;  // 4 ticks = 200ms → 5 caídas por segundo
 
-  if (++tick < speedTickMax) return;
-  tick = 0;
+  static int fallTick = 0;
+  if (++fallTick < speedTickMax) return;
+  fallTick = 0;
 
   if (!(P2IN & BIT1)) {
     sw2HoldCount++;
