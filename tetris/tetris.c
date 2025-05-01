@@ -169,11 +169,52 @@ static void clear_full_rows(void) {
 // Actualiza la pieza móvil
 // --------------------------------------------------
 static void update_moving_shape(void) {
-  if (lastIdx >= 0) {
-    draw_piece(lastCol, lastRow, lastIdx, lastRot, BG_COLOR);
-  }
+  // Dibuja nueva posición ANTES de borrar la anterior
   draw_piece(shapeCol, shapeRow, shapeIndex, shapeRotation,
              shapeColors[shapeIndex]);
+
+  // Borra únicamente los bloques que no están en la nueva posición
+  if (lastIdx >= 0) {
+    for (int i = 0; i < 4; i++) {
+      int ox = shapes[lastIdx][i].x;
+      int oy = shapes[lastIdx][i].y;
+      int last_rx, last_ry;
+      switch(lastRot) {
+        case 0: last_rx = ox;  last_ry = oy;  break;
+        case 1: last_rx = -oy; last_ry = ox;  break;
+        case 2: last_rx = -ox; last_ry = -oy; break;
+        case 3: last_rx = oy;  last_ry = -ox; break;
+        default: last_rx = ox; last_ry = oy; break;
+      }
+
+      int found = FALSE;
+      for (int j = 0; j < 4; j++) {
+        int nx = shapes[shapeIndex][j].x;
+        int ny = shapes[shapeIndex][j].y;
+        int new_rx, new_ry;
+        switch(shapeRotation) {
+          case 0: new_rx = nx;  new_ry = ny;  break;
+          case 1: new_rx = -ny; new_ry = nx;  break;
+          case 2: new_rx = -nx; new_ry = -ny; break;
+          case 3: new_rx = ny;  new_ry = -nx; break;
+          default: new_rx = nx; new_ry = ny; break;
+        }
+        if ((lastCol + last_rx*BLOCK_SIZE == shapeCol + new_rx*BLOCK_SIZE) &&
+            (lastRow + last_ry*BLOCK_SIZE == shapeRow + new_ry*BLOCK_SIZE)) {
+          found = TRUE; break;
+        }
+      }
+
+      // Solo borra si la pieza ya no ocupa este bloque
+      if (!found) {
+        fillRectangle(lastCol + last_rx*BLOCK_SIZE,
+                      lastRow + last_ry*BLOCK_SIZE,
+                      BLOCK_SIZE, BLOCK_SIZE,
+                      BG_COLOR);
+      }
+    }
+  }
+
   lastCol = shapeCol;
   lastRow = shapeRow;
   lastIdx = shapeIndex;
@@ -285,7 +326,7 @@ void __interrupt_vec(PORT2_VECTOR) Port_2(void) {
 // --------------------------------------------------
 void wdt_c_handler(void) {
   static int tick = 0;
-  if (++tick < 16) return;
+  if (++tick < 64) return;
   tick = 0;
 
   if (!(P2IN & (1<<1))) {
