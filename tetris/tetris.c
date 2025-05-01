@@ -9,7 +9,7 @@
 // --------------------------------------------------
 #define SCREEN_WIDTH   128
 #define SCREEN_HEIGHT  160
-#define BLOCK_SIZE     8
+#define BLOCK_SIZE     10
 
 #define MAX_COLUMNS    (SCREEN_WIDTH  / BLOCK_SIZE)
 #define MAX_ROWS       (SCREEN_HEIGHT / BLOCK_SIZE)
@@ -348,16 +348,8 @@ void __interrupt_vec(PORT2_VECTOR) Port_2(void) {
 // WDT: caída, colisiones, bolsa y pulsación larga SW2
 // --------------------------------------------------
 void wdt_c_handler(void) {
-  static short time = 64;
-  if(score >= 10 && score < 20){
-    time = 32;
-  }else if(score >= 20 && score < 40){
-    time = 24;
-  }else{
-    time = 64;
-  }
   static int tick = 0;
-  if (++tick < time) return;
+  if (++tick < 64) return;
   tick = 0;
 
   if (!(P2IN & BIT1)) {
