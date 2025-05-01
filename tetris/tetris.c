@@ -9,7 +9,7 @@
 // --------------------------------------------------
 #define SCREEN_WIDTH   128
 #define SCREEN_HEIGHT  160
-#define BLOCK_SIZE     10
+#define BLOCK_SIZE     8
 
 #define MAX_COLUMNS    (SCREEN_WIDTH  / BLOCK_SIZE)
 #define MAX_ROWS       (SCREEN_HEIGHT / BLOCK_SIZE)
@@ -218,7 +218,6 @@ static void refillBag(void) {
 // Actualiza la pieza móvil (borrado + repintado estáticos)
 // --------------------------------------------------
 static void update_moving_shape(void) {
-  draw_score_label();
   if (lastIdx >= 0) {
     // Borrar la figura anterior y restaurar fondo o bloques estáticos
     for (int i = 0; i < 4; i++) {
@@ -273,21 +272,8 @@ void switch_interrupt_handler(void) {
   char p2val = switch_update_interrupt_sense();
   switches = ~p2val & SWITCHES;
 
-  // Borra figura actual para evitar rastro antes de moverla
-  if (lastIdx >= 0) {
-    for (int i = 0; i < 4; i++) {
-      int c = (lastCol + rotatedX(lastIdx, lastRot, i)*BLOCK_SIZE)/BLOCK_SIZE;
-      int r = (lastRow + rotatedY(lastIdx, lastRot, i)*BLOCK_SIZE)/BLOCK_SIZE;
-
-      if (c >= 0 && c < numColumns && r >= 0 && r < numRows) {
-        signed char idx = grid[c][r];
-        unsigned short color = (idx >= 0 && idx < NUM_SHAPES) ? shapeColors[idx] : BG_COLOR;
-        fillRectangle(c * BLOCK_SIZE, r * BLOCK_SIZE,
-                      BLOCK_SIZE, BLOCK_SIZE,
-                      color);
-      }
-    }
-  }
+  if (lastIdx >= 0)
+    draw_piece(lastCol, lastRow, lastIdx, lastRot, BG_COLOR);
 
   // SW1 izq
   if (switches & BIT0) {
