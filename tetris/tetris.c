@@ -334,18 +334,6 @@ void switch_interrupt_handler(void) {
     }
     if (valid) shapeCol = newCol;
   }
-  if ((switches & BIT0) && (switches & BIT3)) {
-    short newRow = shapeRow + BLOCK_SIZE;
-    int collided = FALSE;
-    for (int i = 0; i < 4; i++) {
-      int c = (shapeCol + rotatedX(shapeIndex, shapeRotation, i)*BLOCK_SIZE)/BLOCK_SIZE;
-      int r = (newRow + rotatedY(shapeIndex, shapeRotation, i)*BLOCK_SIZE)/BLOCK_SIZE;
-      if (r>=numRows || (r>=0 && grid[c][r]>=0)) { collided = TRUE; break; }
-    }
-    if (!collided) {
-      shapeRow = newRow;
-    }
-  }
   redrawScreen = TRUE;
   P2IFG = 0;
   P2IE |= SWITCHES;
