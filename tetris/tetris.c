@@ -9,7 +9,7 @@
 // --------------------------------------------------
 #define SCREEN_WIDTH   128
 #define SCREEN_HEIGHT  160
-#define BLOCK_SIZE     8
+#define BLOCK_SIZE     10
 
 #define MAX_COLUMNS    (SCREEN_WIDTH  / BLOCK_SIZE)
 #define MAX_ROWS       (SCREEN_HEIGHT / BLOCK_SIZE)
@@ -33,9 +33,6 @@ const Offset shapes[][4] = {
 #define BAG_SIZE   (NUM_SHAPES * BAG_MULT)
 static unsigned char bag[BAG_SIZE];
 static int bagPos = BAG_SIZE;  // fuerza refill inicial
-static int tickCount = 0;
-static int secondsElapsed = 0;
-static int speedTickMax = 4;  // 4 ticks = 200ms entre caídas (20Hz / 4 = 5 caídas por segundo)
 
 // --------------------------------------------------
 // Variables globales
@@ -116,10 +113,6 @@ static void draw_score_label(void) {
   itoa_simple(score, buf);
   drawString5x7(5, 5, "SCORE:", COLOR_WHITE, BG_COLOR);
   drawString5x7(35, 5, buf, COLOR_WHITE, BG_COLOR);
-
-  char timeBuf[6];
-  itoa_simple(secondsElapsed, timeBuf);
-  drawString5x7(SCREEN_WIDTH - 30, 5, timeBuf, COLOR_YELLOW, BG_COLOR); // tiempo a la derecha
 }
 
 // --------------------------------------------------
@@ -225,6 +218,7 @@ static void refillBag(void) {
 // Actualiza la pieza móvil (borrado + repintado estáticos)
 // --------------------------------------------------
 static void update_moving_shape(void) {
+  draw_score_label();
   if (lastIdx >= 0) {
     // Borrar la figura anterior y restaurar fondo o bloques estáticos
     for (int i = 0; i < 4; i++) {
@@ -279,8 +273,21 @@ void switch_interrupt_handler(void) {
   char p2val = switch_update_interrupt_sense();
   switches = ~p2val & SWITCHES;
 
-  if (lastIdx >= 0)
-    draw_piece(lastCol, lastRow, lastIdx, lastRot, BG_COLOR);
+  // Borra figura actual para evitar rastro antes de moverla
+  if (lastIdx >= 0) {
+    for (int i = 0; i < 4; i++) {
+      int c = (lastCol + rotatedX(lastIdx, lastRot, i)*BLOCK_SIZE)/BLOCK_SIZE;
+      int r = (lastRow + rotatedY(lastIdx, lastRot, i)*BLOCK_SIZE)/BLOCK_SIZE;
+
+      if (c >= 0 && c < numColumns && r >= 0 && r < numRows) {
+        signed char idx = grid[c][r];
+        unsigned short color = (idx >= 0 && idx < NUM_SHAPES) ? shapeColors[idx] : BG_COLOR;
+        fillRectangle(c * BLOCK_SIZE, r * BLOCK_SIZE,
+                      BLOCK_SIZE, BLOCK_SIZE,
+                      color);
+      }
+    }
+  }
 
   // SW1 izq
   if (switches & BIT0) {
@@ -341,23 +348,17 @@ void __interrupt_vec(PORT2_VECTOR) Port_2(void) {
 // WDT: caída, colisiones, bolsa y pulsación larga SW2
 // --------------------------------------------------
 void wdt_c_handler(void) {
-  tickCount++;
-  if (tickCount % 20 == 0) {  // 20 ticks = 1 segundo
-    secondsElapsed++;
-    draw_score_label();
+  static short time = 64;
+  if(score >= 10 && score < 20){
+    time = 32;
+  }else if(score >= 20 && score < 40){
+    time = 24;
+  }else{
+    time = 64;
   }
-
-  // Ajustar la velocidad según segundos transcurridos
-  if (secondsElapsed >= 10)
-    speedTickMax = 1;  // 1 tick = 50ms (20Hz) → 20 caídas por segundo
-  else if (secondsElapsed >= 5)
-    speedTickMax = 2;  // 2 ticks = 100ms → 10 caídas por segundo
-  else
-    speedTickMax = 4;  // 4 ticks = 200ms → 5 caídas por segundo
-
-  static int fallTick = 0;
-  if (++fallTick < speedTickMax) return;
-  fallTick = 0;
+  static int tick = 0;
+  if (++tick < time) return;
+  tick = 0;
 
   if (!(P2IN & BIT1)) {
     sw2HoldCount++;
