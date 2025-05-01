@@ -9,7 +9,7 @@
 // --------------------------------------------------
 #define SCREEN_WIDTH   128
 #define SCREEN_HEIGHT  160
-#define BLOCK_SIZE     10
+#define BLOCK_SIZE     8
 
 #define MAX_COLUMNS    (SCREEN_WIDTH  / BLOCK_SIZE)
 #define MAX_ROWS       (SCREEN_HEIGHT / BLOCK_SIZE)
