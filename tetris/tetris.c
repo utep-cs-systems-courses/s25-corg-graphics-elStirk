@@ -49,10 +49,6 @@ static short shapeCol, shapeRow;
 static char  shapeIndex    = 0;
 static char  shapeRotation = 0;
 
-static short lastCol = 0, lastRow = 0;
-static char  lastIdx  = -1;
-static char  lastRot  = 0;
-
 static int score = 0;             // puntaje actual
 
 unsigned short shapeColors[NUM_SHAPES] = {
@@ -215,28 +211,14 @@ static void refillBag(void) {
 }
 
 // --------------------------------------------------
-// Actualiza la pieza móvil (borrado + repintado estáticos)
+// Actualiza la pieza móvil redibujando todo el frame
 // --------------------------------------------------
 static void update_moving_shape(void) {
-  if (lastIdx >= 0) {
-    draw_piece(lastCol, lastRow, lastIdx, lastRot, BG_COLOR);
-    for (int i = 0; i < 4; i++) {
-      int c = (lastCol + rotatedX(lastIdx, lastRot, i)*BLOCK_SIZE)/BLOCK_SIZE;
-      int r = (lastRow + rotatedY(lastIdx, lastRot, i)*BLOCK_SIZE)/BLOCK_SIZE;
-      if (r>=0 && c>=0 && c<numColumns && r<numRows && grid[c][r]>=0) {
-        fillRectangle(c*BLOCK_SIZE, r*BLOCK_SIZE,
-                      BLOCK_SIZE, BLOCK_SIZE,
-                      shapeColors[ grid[c][r] ]);
-      }
-    }
-  }
+  clearScreen(BG_COLOR);       // limpia todo
+  draw_grid();                 // dibuja estáticos
+  draw_score_label();          // dibuja puntaje
   draw_piece(shapeCol, shapeRow, shapeIndex, shapeRotation,
-             shapeColors[shapeIndex]);
-
-  lastCol = shapeCol;
-  lastRow = shapeRow;
-  lastIdx = shapeIndex;
-  lastRot = shapeRotation;
+             shapeColors[shapeIndex]); // dibuja móvil
 }
 
 // --------------------------------------------------
@@ -266,9 +248,6 @@ void switch_interrupt_handler(void) {
   char p2val = switch_update_interrupt_sense();
   switches = ~p2val & SWITCHES;
 
-  if (lastIdx >= 0)
-    draw_piece(lastCol, lastRow, lastIdx, lastRot, BG_COLOR);
-
   // SW1 izq
   if (switches & BIT0) {
     short newCol = shapeCol - BLOCK_SIZE;
@@ -297,6 +276,8 @@ void switch_interrupt_handler(void) {
     memset(grid, -1, sizeof grid);
     score = 0;
     randState = TA0R;
+    refillBag();
+    shapeIndex = bag[bagPos++];
     shapeRotation = 0;
     shapeCol = ((numColumns/2)-1)*BLOCK_SIZE;
     shapeRow = -BLOCK_SIZE*4;
@@ -332,6 +313,7 @@ void wdt_c_handler(void) {
   if (++tick < 64) return;
   tick = 0;
 
+  // pulsación larga SW2
   if (!(P2IN & BIT1)) {
     sw2HoldCount++;
     if (sw2HoldCount >= 3) {
@@ -339,6 +321,8 @@ void wdt_c_handler(void) {
       memset(grid, -1, sizeof grid);
       score = 0;
       randState = randState * 1103515245 + 12345;
+      refillBag();
+      shapeIndex = bag[bagPos++];
       shapeRotation = 0;
       shapeCol = ((numColumns/2)-1)*BLOCK_SIZE;
       shapeRow = -BLOCK_SIZE*4;
@@ -350,6 +334,7 @@ void wdt_c_handler(void) {
     sw2HoldCount = 0;
   }
 
+  // movimiento hacia abajo y colisión
   short newRow = shapeRow + BLOCK_SIZE;
   int collided = FALSE;
   for (int i = 0; i < 4; i++) {
@@ -360,17 +345,21 @@ void wdt_c_handler(void) {
   if (!collided) {
     shapeRow = newRow;
   } else {
+    // game over si spawn choca
     if (shapeRow < 0) {
       clearScreen(BG_COLOR);
       memset(grid, -1, sizeof grid);
       score = 0;
       randState = TA0R;
+      refillBag();
+      shapeIndex = bag[bagPos++];
       shapeRotation = 0;
       shapeCol = ((numColumns/2)-1)*BLOCK_SIZE;
       shapeRow = -BLOCK_SIZE*4;
       draw_score_label();
       return;
     }
+    // fijar pieza en rejilla
     for (int i = 0; i < 4; i++) {
       int c = (shapeCol + rotatedX(shapeIndex, shapeRotation, i)*BLOCK_SIZE)/BLOCK_SIZE;
       int r = (shapeRow + rotatedY(shapeIndex, shapeRotation, i)*BLOCK_SIZE)/BLOCK_SIZE;
@@ -379,8 +368,8 @@ void wdt_c_handler(void) {
     draw_grid();
     clear_full_rows();
     pieceStoppedFlag = TRUE;
-    lastIdx = -1;
 
+    // siguiente pieza de la bolsa
     if (bagPos >= BAG_SIZE) refillBag();
     shapeIndex = bag[bagPos++];
     shapeRotation = 0;
