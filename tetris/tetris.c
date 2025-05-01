@@ -219,24 +219,31 @@ static void refillBag(void) {
 // --------------------------------------------------
 static void update_moving_shape(void) {
   if (lastIdx >= 0) {
-    // Borrar la figura anterior
-    draw_piece(lastCol, lastRow, lastIdx, lastRot, BG_COLOR);
-
-    // Redibujar solo donde hay piezas estáticas
+    // Borrar la figura anterior y restaurar fondo o bloques estáticos
     for (int i = 0; i < 4; i++) {
       int c = (lastCol + rotatedX(lastIdx, lastRot, i)*BLOCK_SIZE)/BLOCK_SIZE;
       int r = (lastRow + rotatedY(lastIdx, lastRot, i)*BLOCK_SIZE)/BLOCK_SIZE;
 
       if (c >= 0 && c < numColumns && r >= 0 && r < numRows) {
         signed char idx = grid[c][r];
-        if (idx >= 0 && idx < NUM_SHAPES) {
-          fillRectangle(c * BLOCK_SIZE, r * BLOCK_SIZE,
-                        BLOCK_SIZE, BLOCK_SIZE,
-                        shapeColors[idx]);
-        }
+        unsigned short color = (idx >= 0 && idx < NUM_SHAPES) ? shapeColors[idx] : BG_COLOR;
+        fillRectangle(c * BLOCK_SIZE, r * BLOCK_SIZE,
+                      BLOCK_SIZE, BLOCK_SIZE,
+                      color);
       }
     }
   }
+
+  // Dibujar la figura en su nueva posición
+  draw_piece(shapeCol, shapeRow, shapeIndex, shapeRotation,
+             shapeColors[shapeIndex]);
+
+  // Guardar nueva posición como "última"
+  lastCol = shapeCol;
+  lastRow = shapeRow;
+  lastIdx = shapeIndex;
+  lastRot = shapeRotation;
+}
 
   // Dibujar la figura en su nueva posición
   draw_piece(shapeCol, shapeRow, shapeIndex, shapeRotation,
