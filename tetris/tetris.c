@@ -272,8 +272,21 @@ void switch_interrupt_handler(void) {
   char p2val = switch_update_interrupt_sense();
   switches = ~p2val & SWITCHES;
 
-  if (lastIdx >= 0)
-    draw_piece(lastCol, lastRow, lastIdx, lastRot, BG_COLOR);
+  // Borra figura actual para evitar rastro antes de moverla
+  if (lastIdx >= 0) {
+    for (int i = 0; i < 4; i++) {
+      int c = (lastCol + rotatedX(lastIdx, lastRot, i)*BLOCK_SIZE)/BLOCK_SIZE;
+      int r = (lastRow + rotatedY(lastIdx, lastRot, i)*BLOCK_SIZE)/BLOCK_SIZE;
+
+      if (c >= 0 && c < numColumns && r >= 0 && r < numRows) {
+        signed char idx = grid[c][r];
+        unsigned short color = (idx >= 0 && idx < NUM_SHAPES) ? shapeColors[idx] : BG_COLOR;
+        fillRectangle(c * BLOCK_SIZE, r * BLOCK_SIZE,
+                      BLOCK_SIZE, BLOCK_SIZE,
+                      color);
+      }
+    }
+  }
 
   // SW1 izq
   if (switches & BIT0) {
