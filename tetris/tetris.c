@@ -98,8 +98,8 @@ static void draw_score_label(void) {
   fillRectangle(0, 0, SCREEN_WIDTH, 8, BG_COLOR);
   char buf[6];
   itoa_simple(score, buf);
-  drawString5x7(0, 0, "SCORE:", COLOR_WHITE, BG_COLOR);
-  drawString5x7(6*5, 0, buf, COLOR_WHITE, BG_COLOR);
+  drawString5x7(5, 5, "SCORE:", COLOR_WHITE, BG_COLOR);
+  drawString5x7(35, 5, buf, COLOR_WHITE, BG_COLOR);
 }
 
 // --------------------------------------------------
