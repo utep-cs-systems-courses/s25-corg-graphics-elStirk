@@ -33,6 +33,8 @@ const Offset shapes[][4] = {
 #define BAG_SIZE   (NUM_SHAPES * BAG_MULT)
 static unsigned char bag[BAG_SIZE];
 static int bagPos = BAG_SIZE;  // fuerza refill inicial
+static int frameCount = 0;
+static int secondsElapsed = 0;
 
 // --------------------------------------------------
 // Variables globales
@@ -113,6 +115,10 @@ static void draw_score_label(void) {
   itoa_simple(score, buf);
   drawString5x7(5, 5, "SCORE:", COLOR_WHITE, BG_COLOR);
   drawString5x7(35, 5, buf, COLOR_WHITE, BG_COLOR);
+
+  char timeBuf[6];
+  itoa_simple(secondsElapsed, timeBuf);
+  drawString5x7(SCREEN_WIDTH - 30, 5, timeBuf, COLOR_YELLOW, BG_COLOR); // tiempo a la derecha
 }
 
 // --------------------------------------------------
@@ -335,7 +341,24 @@ void __interrupt_vec(PORT2_VECTOR) Port_2(void) {
 // --------------------------------------------------
 void wdt_c_handler(void) {
   static int tick = 0;
-  if (++tick < 64) return;
+  static int speedTickMax = 64;
+
+  frameCount++;
+  if (frameCount >= 64) {
+    frameCount = 0;
+    secondsElapsed++;
+    draw_score_label();
+  }
+
+  // Ajustar velocidad según tiempo
+  if (secondsElapsed >= 10)
+    speedTickMax = 24;
+  else if (secondsElapsed >= 5)
+    speedTickMax = 32;
+  else
+    speedTickMax = 64;
+
+  if (++tick < speedTickMax) return;
   tick = 0;
 
   if (!(P2IN & BIT1)) {
