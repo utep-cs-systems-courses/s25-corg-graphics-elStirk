@@ -245,17 +245,6 @@ static void update_moving_shape(void) {
   lastRot = shapeRotation;
 }
 
-  // Dibujar la figura en su nueva posición
-  draw_piece(shapeCol, shapeRow, shapeIndex, shapeRotation,
-             shapeColors[shapeIndex]);
-
-  // Actualizar referencia para el próximo ciclo
-  lastCol = shapeCol;
-  lastRow = shapeRow;
-  lastIdx = shapeIndex;
-  lastRot = shapeRotation;
-}
-
 // --------------------------------------------------
 // Switches con debounce e interrupciones
 // --------------------------------------------------
