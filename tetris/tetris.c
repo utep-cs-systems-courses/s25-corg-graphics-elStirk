@@ -27,9 +27,17 @@ const Offset shapes[][4] = {
 #define NUM_SHAPES  (sizeof(shapes)/sizeof(shapes[0]))
 
 // --------------------------------------------------
+// Bolsa “8-bag” (2 copias de cada) para spawn sin patrones
+// --------------------------------------------------
+#define BAG_MULT   2
+#define BAG_SIZE   (NUM_SHAPES * BAG_MULT)
+static unsigned char bag[BAG_SIZE];
+static int bagPos = BAG_SIZE;  // fuerza refill inicial
+
+// --------------------------------------------------
 // Variables globales
 // --------------------------------------------------
-static signed char grid[MAX_COLUMNS][MAX_ROWS];
+static signed char grid[MAX_COLUMNS][MAX_ROWS]; // índice de forma o -1
 static const int numColumns = MAX_COLUMNS;
 static const int numRows    = MAX_ROWS;
 
@@ -45,7 +53,7 @@ static short lastCol = 0, lastRow = 0;
 static char  lastIdx  = -1;
 static char  lastRot  = 0;
 
-static int score = 0;
+static int score = 0;             // puntaje actual
 
 unsigned short shapeColors[NUM_SHAPES] = {
   COLOR_RED, COLOR_GREEN, COLOR_ORANGE, COLOR_BLUE
@@ -66,11 +74,17 @@ static int sw2HoldCount = 0;
 // Prototipos
 // --------------------------------------------------
 static void draw_piece(short col, short row, char idx, char rot, unsigned short color);
+static void draw_grid(void);
+static void clear_full_rows(void);
 static void draw_score_label(void);
 static void itoa_simple(int val, char *buf);
 static int rotatedX(char idx, char rot, int i);
 static int rotatedY(char idx, char rot, int i);
-static void clear_full_rows(void);
+static void refillBag(void);
+static void update_moving_shape(void);
+static char switch_update_interrupt_sense(void);
+static void switch_init(void);
+static void switch_interrupt_handler(void);
 
 // --------------------------------------------------
 // Convierte entero a texto simple (base 10)
@@ -102,10 +116,11 @@ static void draw_score_label(void) {
 }
 
 // --------------------------------------------------
-// Helpers para rotación sin duplicar código
+// Helpers de rotación
 // --------------------------------------------------
 static int rotatedX(char idx, char rot, int i) {
-  int ox = shapes[idx][i].x, oy = shapes[idx][i].y;
+  int ox = shapes[idx][i].x;
+  int oy = shapes[idx][i].y;
   switch(rot) {
     case 1: return -oy;
     case 2: return -ox;
@@ -114,7 +129,8 @@ static int rotatedX(char idx, char rot, int i) {
   }
 }
 static int rotatedY(char idx, char rot, int i) {
-  int ox = shapes[idx][i].x, oy = shapes[idx][i].y;
+  int ox = shapes[idx][i].x;
+  int oy = shapes[idx][i].y;
   switch(rot) {
     case 1: return ox;
     case 2: return -oy;
@@ -124,7 +140,7 @@ static int rotatedY(char idx, char rot, int i) {
 }
 
 // --------------------------------------------------
-// Dibuja o borra una pieza con su rotación
+// Dibuja una pieza con rotación
 // --------------------------------------------------
 static void draw_piece(short col, short row, char idx, char rot, unsigned short color) {
   for (int i = 0; i < 4; i++) {
@@ -138,7 +154,24 @@ static void draw_piece(short col, short row, char idx, char rot, unsigned short 
 }
 
 // --------------------------------------------------
-// Elimina filas completas (solo redibuja celdas afectadas)
+// Dibuja todas las piezas estáticas
+// --------------------------------------------------
+static void draw_grid(void) {
+  for (int c = 0; c < numColumns; c++) {
+    for (int r = 0; r < numRows; r++) {
+      signed char idx = grid[c][r];
+      if (idx >= 0) {
+        fillRectangle(c*BLOCK_SIZE,
+                      r*BLOCK_SIZE,
+                      BLOCK_SIZE, BLOCK_SIZE,
+                      shapeColors[idx]);
+      }
+    }
+  }
+}
+
+// --------------------------------------------------
+// Elimina filas completas
 // --------------------------------------------------
 static void clear_full_rows(void) {
   for (int r = 0; r < numRows; r++) {
@@ -146,44 +179,96 @@ static void clear_full_rows(void) {
     for (int c = 0; c < numColumns; c++) {
       if (grid[c][r] < 0) { full = FALSE; break; }
     }
-    if (!full) continue;
-
-    // 1) Puntaje y actualiza rótulo
-    score += 5;
-    draw_score_label();
-
-    // 2) Borra visualmente la fila r
-    for (int c = 0; c < numColumns; c++) {
-      fillRectangle(c*BLOCK_SIZE, r*BLOCK_SIZE,
-                    BLOCK_SIZE, BLOCK_SIZE,
-                    BG_COLOR);
+    if (full) {
+      score += 5;
+      for (int rr = r; rr > 0; rr--)
+        for (int c = 0; c < numColumns; c++)
+          grid[c][rr] = grid[c][rr-1];
+      for (int c = 0; c < numColumns; c++)
+        grid[c][0] = -1;
+      clearScreen(BG_COLOR);
+      draw_grid();
+      draw_score_label();
+      r--;
     }
-
-    // 3) Baja filas superiores y redibuja cada celda movida
-    for (int rr = r; rr > 0; rr--) {
-      for (int c = 0; c < numColumns; c++) {
-        grid[c][rr] = grid[c][rr-1];
-        if (grid[c][rr] >= 0) {
-          fillRectangle(c*BLOCK_SIZE, rr*BLOCK_SIZE,
-                        BLOCK_SIZE, BLOCK_SIZE,
-                        shapeColors[ grid[c][rr] ]);
-        }
-      }
-    }
-    // 4) Limpia fila 0
-    for (int c = 0; c < numColumns; c++) {
-      grid[c][0] = -1;
-    }
-    // Volver a comprobar misma r por múltiples líneas
-    r--;
   }
 }
 
 // --------------------------------------------------
-// Botones con debounce e interrupciones
+// Rellena y baraja la bolsa (Fisher–Yates sobre 8)
 // --------------------------------------------------
-#define SWITCHES 15
+static void refillBag(void) {
+  int idx = 0;
+  for (int m = 0; m < BAG_MULT; m++) {
+    for (int i = 0; i < NUM_SHAPES; i++) {
+      bag[idx++] = i;
+    }
+  }
+  for (int i = BAG_SIZE - 1; i > 0; i--) {
+    randState = randState * 1103515245 + 12345;
+    unsigned int j = (randState >> 16) % (i + 1);
+    unsigned char tmp = bag[i];
+    bag[i] = bag[j];
+    bag[j] = tmp;
+  }
+  bagPos = 0;
+}
+
+// --------------------------------------------------
+// Actualiza la pieza móvil (borrado + repintado estáticos)
+// --------------------------------------------------
+static void update_moving_shape(void) {
+  if (lastIdx >= 0) {
+    // Borrar la figura anterior
+    draw_piece(lastCol, lastRow, lastIdx, lastRot, BG_COLOR);
+
+    // Redibujar solo donde hay piezas estáticas
+    for (int i = 0; i < 4; i++) {
+      int c = (lastCol + rotatedX(lastIdx, lastRot, i)*BLOCK_SIZE)/BLOCK_SIZE;
+      int r = (lastRow + rotatedY(lastIdx, lastRot, i)*BLOCK_SIZE)/BLOCK_SIZE;
+
+      if (c >= 0 && c < numColumns && r >= 0 && r < numRows) {
+        signed char idx = grid[c][r];
+        if (idx >= 0 && idx < NUM_SHAPES) {
+          fillRectangle(c * BLOCK_SIZE, r * BLOCK_SIZE,
+                        BLOCK_SIZE, BLOCK_SIZE,
+                        shapeColors[idx]);
+        }
+      }
+    }
+  }
+
+  // Dibujar la figura en su nueva posición
+  draw_piece(shapeCol, shapeRow, shapeIndex, shapeRotation,
+             shapeColors[shapeIndex]);
+
+  // Actualizar referencia para el próximo ciclo
+  lastCol = shapeCol;
+  lastRow = shapeRow;
+  lastIdx = shapeIndex;
+  lastRot = shapeRotation;
+}
+
+// --------------------------------------------------
+// Switches con debounce e interrupciones
+// --------------------------------------------------
+#define SWITCHES (BIT0 | BIT1 | BIT2 | BIT3)
 volatile int switches = 0;
+
+static char switch_update_interrupt_sense(void) {
+  char p2val = P2IN;
+  P2IES |= (p2val & SWITCHES);
+  P2IES &= (p2val | ~SWITCHES);
+  return p2val;
+}
+
+void switch_init(void) {
+  P2REN |= SWITCHES;
+  P2IE  |= SWITCHES;
+  P2OUT |= SWITCHES;
+  P2DIR &= ~SWITCHES;
+  switch_update_interrupt_sense();
+}
 
 void switch_interrupt_handler(void) {
   P2IE &= ~SWITCHES;
@@ -191,99 +276,73 @@ void switch_interrupt_handler(void) {
   char p2val = switch_update_interrupt_sense();
   switches = ~p2val & SWITCHES;
 
-  // Si había una pieza dibujada, borramos sólo esa forma
-  if (lastIdx >= 0) {
+  if (lastIdx >= 0)
     draw_piece(lastCol, lastRow, lastIdx, lastRot, BG_COLOR);
-  }
 
-  // SW1: mover izquierda
-  if (switches & (1<<0)) {
+  // SW1 izq
+  if (switches & BIT0) {
     short newCol = shapeCol - BLOCK_SIZE;
     int valid = TRUE;
     for (int i = 0; i < 4; i++) {
       int c = (newCol + rotatedX(shapeIndex, shapeRotation, i)*BLOCK_SIZE)/BLOCK_SIZE;
       int r = (shapeRow + rotatedY(shapeIndex, shapeRotation, i)*BLOCK_SIZE)/BLOCK_SIZE;
-      if (c<0 || (r>=0 && grid[c][r]>=0)) { valid = FALSE; break; }
+      if (c<0 || (r>=0 && grid[c][r]>=0)) { valid=FALSE; break; }
     }
     if (valid) shapeCol = newCol;
   }
-
-  // SW2: rotar (pulsación corta)
-  if ((switches & (1<<1)) && sw2HoldCount == 0) {
+  // SW2 rotar
+  if ((switches & BIT1) && sw2HoldCount == 0) {
     char newRot = (shapeRotation + 1) % 4;
     int valid = TRUE;
     for (int i = 0; i < 4; i++) {
       int c = (shapeCol + rotatedX(shapeIndex, newRot, i)*BLOCK_SIZE)/BLOCK_SIZE;
       int r = (shapeRow + rotatedY(shapeIndex, newRot, i)*BLOCK_SIZE)/BLOCK_SIZE;
-      if (c<0||c>=numColumns||r>=numRows||(r>=0&&grid[c][r]>=0)) { valid = FALSE; break; }
+      if (c<0||c>=numColumns||r>=numRows||(r>=0&&grid[c][r]>=0)) { valid=FALSE; break; }
     }
-    if (valid) {
-      shapeRotation = newRot;
-
-      // —— DIBUJO INMEDIATO de la nueva rotación —— 
-      draw_piece(shapeCol, shapeRow, shapeIndex, shapeRotation, shapeColors[shapeIndex]);
-
-      // Actualizamos el “last” para el próximo borrado parcial
-      lastCol = shapeCol;
-      lastRow = shapeRow;
-      lastIdx = shapeIndex;
-      lastRot = shapeRotation;
-    }
+    if (valid) shapeRotation = newRot;
   }
-
-  // SW3: reiniciar manual
-  if (switches & (1<<2)) {
+  // SW3 reiniciar
+  if (switches & BIT2) {
     clearScreen(BG_COLOR);
     memset(grid, -1, sizeof grid);
     score = 0;
     randState = TA0R;
     shapeRotation = 0;
-    shapeCol = ((numColumns / 2) - 1) * BLOCK_SIZE;
-    shapeRow = -BLOCK_SIZE * 4;
+    shapeCol = ((numColumns/2)-1)*BLOCK_SIZE;
+    shapeRow = -BLOCK_SIZE*4;
     draw_score_label();
     sw2HoldCount = 0;
   }
-
-  // SW4: mover derecha
-  if (switches & (1<<3)) {
+  // SW4 der
+  if (switches & BIT3) {
     short newCol = shapeCol + BLOCK_SIZE;
     int valid = TRUE;
     for (int i = 0; i < 4; i++) {
       int c = (newCol + rotatedX(shapeIndex, shapeRotation, i)*BLOCK_SIZE)/BLOCK_SIZE;
       int r = (shapeRow + rotatedY(shapeIndex, shapeRotation, i)*BLOCK_SIZE)/BLOCK_SIZE;
-      if (c>=numColumns || (r>=0 && grid[c][r]>=0)) { valid = FALSE; break; }
+      if (c>=numColumns || (r>=0 && grid[c][r]>=0)) { valid=FALSE; break; }
     }
-    if (valid) {
-      shapeCol = newCol;
-
-      // —— DIBUJO INMEDIATO de la nueva posición —— 
-      draw_piece(shapeCol, shapeRow, shapeIndex, shapeRotation, shapeColors[shapeIndex]);
-      lastCol = shapeCol;
-      lastRow = shapeRow;
-      lastIdx = shapeIndex;
-      lastRot = shapeRotation;
-    }
+    if (valid) shapeCol = newCol;
   }
 
+  redrawScreen = TRUE;
   P2IFG = 0;
   P2IE |= SWITCHES;
 }
 
 void __interrupt_vec(PORT2_VECTOR) Port_2(void) {
-  if (P2IFG & SWITCHES)
-    switch_interrupt_handler();
+  if (P2IFG & SWITCHES) switch_interrupt_handler();
 }
 
 // --------------------------------------------------
-// WDT: caída, game-over y pulsación larga SW2
+// WDT: caída, colisiones, bolsa y pulsación larga SW2
 // --------------------------------------------------
 void wdt_c_handler(void) {
   static int tick = 0;
   if (++tick < 64) return;
   tick = 0;
 
-  // Pulsación larga SW2 (~3s) → reinicio
-  if (!(P2IN & (1<<1))) {
+  if (!(P2IN & BIT1)) {
     sw2HoldCount++;
     if (sw2HoldCount >= 3) {
       clearScreen(BG_COLOR);
@@ -291,8 +350,8 @@ void wdt_c_handler(void) {
       score = 0;
       randState = randState * 1103515245 + 12345;
       shapeRotation = 0;
-      shapeCol = ((numColumns / 2) - 1) * BLOCK_SIZE;
-      shapeRow = -BLOCK_SIZE * 4;
+      shapeCol = ((numColumns/2)-1)*BLOCK_SIZE;
+      shapeRow = -BLOCK_SIZE*4;
       draw_score_label();
       sw2HoldCount = 0;
       return;
@@ -301,59 +360,43 @@ void wdt_c_handler(void) {
     sw2HoldCount = 0;
   }
 
-  // Intentar bajar la pieza
   short newRow = shapeRow + BLOCK_SIZE;
   int collided = FALSE;
   for (int i = 0; i < 4; i++) {
     int c = (shapeCol + rotatedX(shapeIndex, shapeRotation, i)*BLOCK_SIZE)/BLOCK_SIZE;
-    int r = (newRow  + rotatedY(shapeIndex, shapeRotation, i)*BLOCK_SIZE)/BLOCK_SIZE;
+    int r = (newRow + rotatedY(shapeIndex, shapeRotation, i)*BLOCK_SIZE)/BLOCK_SIZE;
     if (r>=numRows || (r>=0 && grid[c][r]>=0)) { collided = TRUE; break; }
   }
-
   if (!collided) {
-    // Borra la pieza antigua
-    draw_piece(lastCol, lastRow, lastIdx, lastRot, BG_COLOR);
-    // Actualiza posición y dibuja de nuevo
     shapeRow = newRow;
-    draw_piece(shapeCol, shapeRow, shapeIndex, shapeRotation,
-               shapeColors[shapeIndex]);
-    // Guarda estado para el próximo ciclo
-    lastCol = shapeCol; lastRow = shapeRow;
-    lastIdx = shapeIndex; lastRot = shapeRotation;
-    redrawScreen = FALSE;
-    return;
-  }
+  } else {
+    if (shapeRow < 0) {
+      clearScreen(BG_COLOR);
+      memset(grid, -1, sizeof grid);
+      score = 0;
+      randState = TA0R;
+      shapeRotation = 0;
+      shapeCol = ((numColumns/2)-1)*BLOCK_SIZE;
+      shapeRow = -BLOCK_SIZE*4;
+      draw_score_label();
+      return;
+    }
+    for (int i = 0; i < 4; i++) {
+      int c = (shapeCol + rotatedX(shapeIndex, shapeRotation, i)*BLOCK_SIZE)/BLOCK_SIZE;
+      int r = (shapeRow + rotatedY(shapeIndex, shapeRotation, i)*BLOCK_SIZE)/BLOCK_SIZE;
+      if (r>=0 && r<numRows) grid[c][r] = shapeIndex;
+    }
+    draw_grid();
+    clear_full_rows();
+    pieceStoppedFlag = TRUE;
+    lastIdx = -1;
 
-  // Si colisiona al nacer → game over
-  if (shapeRow < 0) {
-    clearScreen(BG_COLOR);
-    memset(grid, -1, sizeof grid);
-    score = 0;
-    randState = TA0R;
+    if (bagPos >= BAG_SIZE) refillBag();
+    shapeIndex = bag[bagPos++];
     shapeRotation = 0;
-    shapeCol = ((numColumns / 2) - 1) * BLOCK_SIZE;
-    shapeRow = -BLOCK_SIZE * 4;
-    draw_score_label();
-    return;
+    shapeCol = ((numColumns/2)-1)*BLOCK_SIZE;
+    shapeRow = -BLOCK_SIZE*4;
   }
-
-  // Fija la pieza en la rejilla
-  for (int i = 0; i < 4; i++) {
-    int c = (shapeCol + rotatedX(shapeIndex, shapeRotation, i)*BLOCK_SIZE)/BLOCK_SIZE;
-    int r = (shapeRow + rotatedY(shapeIndex, shapeRotation, i)*BLOCK_SIZE)/BLOCK_SIZE;
-    if (r>=0 && r<numRows) grid[c][r] = shapeIndex;
-  }
-
-  // Elimina filas, genera nueva pieza
-  clear_full_rows();
-  pieceStoppedFlag = TRUE;
-  lastIdx = -1;
-
-  randState = randState * 1103515245 + 12345;
-  shapeIndex = (randState >> 16) % NUM_SHAPES;
-  shapeRotation = 0;
-  shapeCol = ((numColumns / 2) - 1) * BLOCK_SIZE;
-  shapeRow = -BLOCK_SIZE * 4;
   redrawScreen = TRUE;
 }
 
@@ -364,26 +407,30 @@ int main(void) {
   P1DIR |= BIT6;
   P1OUT |= BIT6;
   configureClocks();
-
   lcd_init();
   clearScreen(BG_COLOR);
   score = 0;
   draw_score_label();
 
   randState = TA0R;
-  shapeIndex = (randState >> 16) % NUM_SHAPES;
+  refillBag();
+  shapeIndex = bag[bagPos++];
+  shapeRotation = 0;
+  shapeCol = ((numColumns/2)-1)*BLOCK_SIZE;
+  shapeRow = -BLOCK_SIZE*4;
 
   switch_init();
   memset(grid, -1, sizeof grid);
-  shapeRotation = 0;
-  shapeCol = ((numColumns / 2) - 1) * BLOCK_SIZE;
-  shapeRow = -BLOCK_SIZE * 4;
 
   enableWDTInterrupts();
   or_sr(0x8);
-
   while (TRUE) {
-    // Con nuestro enfoque, no hace falta refrescar aquí
-    or_sr(0x10);  // baja CPU hasta la próxima interrupción
+    if (redrawScreen) {
+      redrawScreen = FALSE;
+      update_moving_shape();
+    }
+    P1OUT &= ~BIT6;
+    or_sr(0x10);
+    P1OUT |= BIT6;
   }
 }
