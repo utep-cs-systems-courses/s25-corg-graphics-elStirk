@@ -59,7 +59,7 @@ static short shapeCol, shapeRow;
 static char shapeIndex, shapeRotation;
 
 // Variables para input
-#define SWITCHES 15
+#define SWITCHES BIT0|BIT1|BIT2|BIT3
 volatile int switches;
 
 // Prototipos
@@ -101,7 +101,7 @@ static void draw_score_label(void) {
 // Dibuja todas las piezas fijas
 // --------------------------------------------------
 static void draw_grid(void) {
-  fillScreen(BG_COLOR);
+  clearScreen(BG_COLOR);
   draw_score_label();
   for (int c = 0; c < MAX_COLUMNS; c++)
     for (int r = 0; r < MAX_ROWS; r++)
@@ -233,16 +233,16 @@ static void handle_input(void) {
     }
     // derecha
     if (switches & BIT3) {
-      short nc = shapeCol + BLOCK_SIZE; int ok=1;
+      short nm = shapeCol + BLOCK_SIZE; int ok=1;
       for (int i=0;i<4;i++) {
         Offset o=shapes[shapeIndex][i];
         int rx=(shapeRotation==1?-o.y:shapeRotation==2?-o.x:shapeRotation==3?o.y:o.x);
         int ry=(shapeRotation==1?o.x:shapeRotation==2?-o.y:shapeRotation==3?-o.x:o.y);
-        int c=(nc+rx*BLOCK_SIZE)/BLOCK_SIZE;
+        int c=(nm+rx*BLOCK_SIZE)/BLOCK_SIZE;
         int r=(shapeRow+ry*BLOCK_SIZE)/BLOCK_SIZE;
         if (c>=MAX_COLUMNS||(r>=0&&grid[c][r]>=0)) ok=0;
       }
-      if (ok) shapeCol=nc;
+      if (ok) shapeCol=nm;
     }
     // rotar corta
     if ((switches & BIT1) && sw2HoldCount==0) {
@@ -309,7 +309,7 @@ void wdt_c_handler(void) {
 int main(void) {
   configureClocks();
   lcd_init();
-  fillScreen(BG_COLOR);
+  clearScreen(BG_COLOR);
 
   redrawScreen = 1;
   randState = TA0R;
