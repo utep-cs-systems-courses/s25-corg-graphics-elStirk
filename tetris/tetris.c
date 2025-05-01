@@ -185,28 +185,13 @@ static void clear_full_rows(void) {
 #define SWITCHES 15
 volatile int switches = 0;
 
-static char switch_update_interrupt_sense(void) {
-  char p2val = P2IN;
-  P2IES |= (p2val & SWITCHES);
-  P2IES &= (p2val | ~SWITCHES);
-  return p2val;
-}
-
-void switch_init(void) {
-  P2REN |= SWITCHES;
-  P2IE  |= SWITCHES;
-  P2OUT |= SWITCHES;
-  P2DIR &= ~SWITCHES;
-  switch_update_interrupt_sense();
-}
-
 void switch_interrupt_handler(void) {
   P2IE &= ~SWITCHES;
   __delay_cycles(50000);
   char p2val = switch_update_interrupt_sense();
   switches = ~p2val & SWITCHES;
 
-  // Borra “fantasma” de pieza anterior
+  // Si había una pieza dibujada, borramos sólo esa forma
   if (lastIdx >= 0) {
     draw_piece(lastCol, lastRow, lastIdx, lastRot, BG_COLOR);
   }
@@ -232,7 +217,18 @@ void switch_interrupt_handler(void) {
       int r = (shapeRow + rotatedY(shapeIndex, newRot, i)*BLOCK_SIZE)/BLOCK_SIZE;
       if (c<0||c>=numColumns||r>=numRows||(r>=0&&grid[c][r]>=0)) { valid = FALSE; break; }
     }
-    if (valid) shapeRotation = newRot;
+    if (valid) {
+      shapeRotation = newRot;
+
+      // —— DIBUJO INMEDIATO de la nueva rotación —— 
+      draw_piece(shapeCol, shapeRow, shapeIndex, shapeRotation, shapeColors[shapeIndex]);
+
+      // Actualizamos el “last” para el próximo borrado parcial
+      lastCol = shapeCol;
+      lastRow = shapeRow;
+      lastIdx = shapeIndex;
+      lastRot = shapeRotation;
+    }
   }
 
   // SW3: reiniciar manual
@@ -257,10 +253,18 @@ void switch_interrupt_handler(void) {
       int r = (shapeRow + rotatedY(shapeIndex, shapeRotation, i)*BLOCK_SIZE)/BLOCK_SIZE;
       if (c>=numColumns || (r>=0 && grid[c][r]>=0)) { valid = FALSE; break; }
     }
-    if (valid) shapeCol = newCol;
+    if (valid) {
+      shapeCol = newCol;
+
+      // —— DIBUJO INMEDIATO de la nueva posición —— 
+      draw_piece(shapeCol, shapeRow, shapeIndex, shapeRotation, shapeColors[shapeIndex]);
+      lastCol = shapeCol;
+      lastRow = shapeRow;
+      lastIdx = shapeIndex;
+      lastRot = shapeRotation;
+    }
   }
 
-  redrawScreen = TRUE;
   P2IFG = 0;
   P2IE |= SWITCHES;
 }
